@@ -1,0 +1,8 @@
+is_global = true
+build_property.RootNamespace = AutoCAD.AITranslate
+build_property.ProjectDir = D:\CodexProject\cad2024-ai-translate\cad2024-ai-translate\src\AutoCAD.AITranslate\
+build_property.EnableComHosting = 
+build_property.EnableGeneratedComInterfaceComImportInterop = 
+build_property.CsWinRTUseWindowsUIXamlProjections = false
+build_property.EffectiveAnalysisLevelStyle = 
+build_property.EnableCodeStyleSeverity = 

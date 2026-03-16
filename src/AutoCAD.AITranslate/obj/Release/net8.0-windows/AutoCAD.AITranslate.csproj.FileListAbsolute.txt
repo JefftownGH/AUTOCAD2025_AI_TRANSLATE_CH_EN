@@ -1,0 +1,13 @@
+D:\CodexProject\cad2024-ai-translate\cad2024-ai-translate\src\AutoCAD.AITranslate\obj\Release\net8.0-windows\AutoCAD.AITranslate.csproj.AssemblyReference.cache
+D:\CodexProject\cad2024-ai-translate\cad2024-ai-translate\src\AutoCAD.AITranslate\obj\Release\net8.0-windows\AutoCAD.AITranslate.GeneratedMSBuildEditorConfig.editorconfig
+D:\CodexProject\cad2024-ai-translate\cad2024-ai-translate\src\AutoCAD.AITranslate\obj\Release\net8.0-windows\AutoCAD.AITranslate.AssemblyInfoInputs.cache
+D:\CodexProject\cad2024-ai-translate\cad2024-ai-translate\src\AutoCAD.AITranslate\obj\Release\net8.0-windows\AutoCAD.AITranslate.AssemblyInfo.cs
+D:\CodexProject\cad2024-ai-translate\cad2024-ai-translate\src\AutoCAD.AITranslate\obj\Release\net8.0-windows\AutoCAD.AITranslate.csproj.CoreCompileInputs.cache
+D:\CodexProject\cad2024-ai-translate\cad2024-ai-translate\src\AutoCAD.AITranslate\bin\Release\net8.0-windows\AutoCAD.AITranslate.settings.json
+D:\CodexProject\cad2024-ai-translate\cad2024-ai-translate\src\AutoCAD.AITranslate\bin\Release\net8.0-windows\AutoCAD.AITranslate.deps.json
+D:\CodexProject\cad2024-ai-translate\cad2024-ai-translate\src\AutoCAD.AITranslate\bin\Release\net8.0-windows\AutoCAD.AITranslate.dll
+D:\CodexProject\cad2024-ai-translate\cad2024-ai-translate\src\AutoCAD.AITranslate\bin\Release\net8.0-windows\AutoCAD.AITranslate.pdb
+D:\CodexProject\cad2024-ai-translate\cad2024-ai-translate\src\AutoCAD.AITranslate\obj\Release\net8.0-windows\AutoCAD.AITranslate.dll
+D:\CodexProject\cad2024-ai-translate\cad2024-ai-translate\src\AutoCAD.AITranslate\obj\Release\net8.0-windows\refint\AutoCAD.AITranslate.dll
+D:\CodexProject\cad2024-ai-translate\cad2024-ai-translate\src\AutoCAD.AITranslate\obj\Release\net8.0-windows\AutoCAD.AITranslate.pdb
+D:\CodexProject\cad2024-ai-translate\cad2024-ai-translate\src\AutoCAD.AITranslate\obj\Release\net8.0-windows\ref\AutoCAD.AITranslate.dll

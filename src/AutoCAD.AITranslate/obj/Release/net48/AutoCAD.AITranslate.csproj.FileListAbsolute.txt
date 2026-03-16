@@ -1,0 +1,5 @@
+D:\CodexProject\cad2024-ai-translate\cad2024-ai-translate\src\AutoCAD.AITranslate\obj\Release\net48\AutoCAD.AITranslate.csproj.AssemblyReference.cache
+D:\CodexProject\cad2024-ai-translate\cad2024-ai-translate\src\AutoCAD.AITranslate\obj\Release\net48\AutoCAD.AITranslate.GeneratedMSBuildEditorConfig.editorconfig
+D:\CodexProject\cad2024-ai-translate\cad2024-ai-translate\src\AutoCAD.AITranslate\obj\Release\net48\AutoCAD.AITranslate.AssemblyInfoInputs.cache
+D:\CodexProject\cad2024-ai-translate\cad2024-ai-translate\src\AutoCAD.AITranslate\obj\Release\net48\AutoCAD.AITranslate.AssemblyInfo.cs
+D:\CodexProject\cad2024-ai-translate\cad2024-ai-translate\src\AutoCAD.AITranslate\obj\Release\net48\AutoCAD.AITranslate.csproj.CoreCompileInputs.cache
