@@ -321,8 +321,9 @@ namespace AutoCAD.AITranslate
                     {
                         // Cloning into a block definition would rewrite every reference of
                         // that block, so such items always fall back to in-place replacement.
-                        var mustReplace = mode == TranslationMode.Replace ||
-                                          LayerUtils.IsInsideBlockDefinition(doc.Database, record.OwnerId);
+                        var insideBlockDefinition =
+                            LayerUtils.IsInsideBlockDefinition(doc.Database, tr, record.OwnerId);
+                        var mustReplace = mode == TranslationMode.Replace || insideBlockDefinition;
 
                         if (mustReplace)
                         {
@@ -331,8 +332,7 @@ namespace AutoCAD.AITranslate
                                 applied++;
                             }
 
-                            if (mode == TranslationMode.NewLayer &&
-                                LayerUtils.IsInsideBlockDefinition(doc.Database, record.OwnerId))
+                            if (mode == TranslationMode.NewLayer && insideBlockDefinition)
                             {
                                 blockDefinitionFallbacks++;
                             }
@@ -430,11 +430,11 @@ namespace AutoCAD.AITranslate
 
                     if (entity is DBText dbText)
                     {
-                        AddTextItem(items, db, id, dbText.OwnerId, TextEntityType.DBText, dbText.TextString);
+                        AddTextItem(items, db, tr, id, dbText.OwnerId, TextEntityType.DBText, dbText.TextString);
                     }
                     else if (entity is MText mtext)
                     {
-                        AddTextItem(items, db, id, mtext.OwnerId, TextEntityType.MText, mtext.Contents);
+                        AddTextItem(items, db, tr, id, mtext.OwnerId, TextEntityType.MText, mtext.Contents);
                     }
                 }
 
@@ -540,11 +540,11 @@ namespace AutoCAD.AITranslate
                 var entity = tr.GetObject(id, OpenMode.ForRead, openErased: false) as Entity;
                 if (entity is DBText dbText)
                 {
-                    AddTextItem(items, db, id, dbText.OwnerId, TextEntityType.DBText, dbText.TextString);
+                    AddTextItem(items, db, tr, id, dbText.OwnerId, TextEntityType.DBText, dbText.TextString);
                 }
                 else if (entity is MText mtext)
                 {
-                    AddTextItem(items, db, id, mtext.OwnerId, TextEntityType.MText, mtext.Contents);
+                    AddTextItem(items, db, tr, id, mtext.OwnerId, TextEntityType.MText, mtext.Contents);
                 }
             }
         }
@@ -552,6 +552,7 @@ namespace AutoCAD.AITranslate
         private static void AddTextItem(
             List<TextItem> items,
             Database db,
+            Transaction tr,
             ObjectId id,
             ObjectId ownerId,
             TextEntityType entityType,
@@ -563,7 +564,8 @@ namespace AutoCAD.AITranslate
                 return;
             }
 
-            items.Add(new TextItem(id, ownerId, entityType, original, LayerUtils.IsInsideBlockDefinition(db, ownerId)));
+            var insideBlockDefinition = LayerUtils.IsInsideBlockDefinition(db, tr, ownerId);
+            items.Add(new TextItem(id, ownerId, entityType, original, insideBlockDefinition));
         }
 
         private static TranslationMode? PromptMode(Editor editor)

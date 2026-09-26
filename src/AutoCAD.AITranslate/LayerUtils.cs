@@ -25,18 +25,28 @@ namespace AutoCAD.AITranslate
         }
 
         /// <summary>
-        /// Determines whether an entity's owner is a block definition (as opposed to
-        /// ModelSpace or PaperSpace). Entities inside block definitions must not be
-        /// cloned, because the clone would apply to every reference of that block.
+        /// Determines whether an entity's owner is a block definition, as opposed to
+        /// ModelSpace or PaperSpace. Entities inside block definitions must not be cloned,
+        /// because a clone would apply to every reference of that block.
         /// </summary>
-        public static bool IsInsideBlockDefinition(Database db, ObjectId ownerId)
+        /// <remarks>
+        /// ModelSpaceId and PaperSpaceId live on the BlockTable, not on Database, so the
+        /// table has to be opened to compare against them.
+        /// </remarks>
+        public static bool IsInsideBlockDefinition(Database db, Transaction tr, ObjectId ownerId)
         {
-            if (ownerId == ObjectId.Null || db == null)
+            if (db == null || tr == null || ownerId == ObjectId.Null)
             {
                 return false;
             }
 
-            return ownerId != db.ModelSpaceId && ownerId != db.PaperSpaceId;
+            var bt = tr.GetObject(db.BlockTableId, OpenMode.ForRead) as BlockTable;
+            if (bt == null)
+            {
+                return false;
+            }
+
+            return ownerId != bt[BlockTableRecord.ModelSpace] && ownerId != bt[BlockTableRecord.PaperSpace];
         }
     }
 }

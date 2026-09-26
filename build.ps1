@@ -102,7 +102,6 @@ $env:AUTOCAD_2024_PATH = $AutoCADPath
 # ---------------------------------------------------------------------------
 # Prerequisite checks, reported up front rather than as a confusing build error.
 # ---------------------------------------------------------------------------
-$msbuild = Resolve-MSBuild
 $sdks = Get-DotNetSdks
 $hasNet8 = $false
 foreach ($line in $sdks) {
@@ -112,21 +111,33 @@ foreach ($line in $sdks) {
     }
 }
 
+# `dotnet build` from the SDK is sufficient on its own; MSBuild from Visual Studio is
+# only needed as a fallback when no SDK is present. Requiring Visual Studio when the
+# SDK is already installed would be an unnecessary demand.
+$useDotNet = $hasNet8
+$msbuild = $null
+if (-not $useDotNet) {
+    $msbuild = Resolve-MSBuild
+}
+
 Write-Host "AutoCAD assemblies : $AutoCADPath"
 Write-Host "Configuration      : $Configuration"
-if ($msbuild) {
-    Write-Host "MSBuild            : $msbuild"
-} else {
-    Write-Host "MSBuild            : not found on this machine"
-}
 Write-Host "dotnet SDKs        : $(if ($sdks.Count -gt 0) { ($sdks -join ', ') } else { 'none detected' })"
+if ($useDotNet) {
+    Write-Host "Build driver       : dotnet build (.NET SDK)"
+} elseif ($msbuild) {
+    Write-Host "Build driver       : MSBuild ($msbuild)"
+} else {
+    Write-Host "Build driver       : none available"
+}
 
 $blocking = @()
-if (-not $hasNet8) {
-    $blocking += "The .NET 8 SDK is required to build a net8.0-windows project. Install it from https://dotnet.microsoft.com/download/dotnet/8.0 (the .NET *runtime* alone is not sufficient)."
-}
-if (-not $msbuild) {
-    $blocking += "MSBuild was not found. Install Visual Studio 2022 (Desktop development with C++ / .NET desktop workload) or the standalone Build Tools."
+if (-not $useDotNet) {
+    if ($msbuild) {
+        $blocking += "No .NET 8 SDK was found, so the build falls back to a full MSBuild. Install the .NET 8 SDK for the supported path: https://dotnet.microsoft.com/download/dotnet/8.0"
+    } else {
+        $blocking += "The .NET 8 SDK is required to build a net8.0-windows project. Install it from https://dotnet.microsoft.com/download/dotnet/8.0 (the .NET *runtime* alone is not sufficient). Visual Studio 2022 Build Tools with MSBuild is an alternative."
+    }
 }
 
 if ($blocking.Count -gt 0) {
@@ -142,24 +153,51 @@ if ($blocking.Count -gt 0) {
 # Build
 # ---------------------------------------------------------------------------
 $project = Join-Path $PSScriptRoot "src\AutoCAD.AITranslate\AutoCAD.AITranslate.csproj"
+$restoreIgnore = "-p:RestoreIgnoreFailedSources=true"
 
-$msbuildArgs = @(
-    $project,
-    "/restore",
-    "/p:Configuration=$Configuration",
-    "/p:AutoCADInstallDir=$AutoCADPath"
-)
+if ($useDotNet) {
+    $dotnetArgs = @(
+        "build",
+        $project,
+        "-c", $Configuration,
+        "-p:AutoCADInstallDir=$AutoCADPath"
+    )
 
-if (-not $OnlineRestore) {
-    $offlineSource = "${env:ProgramFiles(x86)}\Microsoft SDKs\NuGetPackages\"
-    if (Test-Path $offlineSource) {
-        $offlineSource = Get-ShortPath $offlineSource
-        $msbuildArgs += "/p:RestoreSources=$offlineSource"
+    if (-not $OnlineRestore) {
+        $offlineSource = "${env:ProgramFiles(x86)}\Microsoft SDKs\NuGetPackages\"
+        if (Test-Path $offlineSource) {
+            $offlineSource = Get-ShortPath $offlineSource
+            $dotnetArgs += "-p:RestoreSources=$offlineSource"
+        }
+        $dotnetArgs += $restoreIgnore
     }
-    $msbuildArgs += "/p:RestoreIgnoreFailedSources=true"
+
+    # The AutoCAD reference assemblies legitimately cause MSB3277 (conflicting versions
+    # across Autodesk's own components). It is noise, not an actionable problem.
+    $dotnetArgs += "-nowarn:MSB3277"
+
+    & dotnet @dotnetArgs
+} else {
+    $msbuildArgs = @(
+        $project,
+        "/restore",
+        "/p:Configuration=$Configuration",
+        "/p:AutoCADInstallDir=$AutoCADPath",
+        "/nowarn:MSB3277"
+    )
+
+    if (-not $OnlineRestore) {
+        $offlineSource = "${env:ProgramFiles(x86)}\Microsoft SDKs\NuGetPackages\"
+        if (Test-Path $offlineSource) {
+            $offlineSource = Get-ShortPath $offlineSource
+            $msbuildArgs += "/p:RestoreSources=$offlineSource"
+        }
+        $msbuildArgs += $restoreIgnore
+    }
+
+    & $msbuild @msbuildArgs
 }
 
-& $msbuild @msbuildArgs
 if ($LASTEXITCODE -ne 0) {
     Write-Error "Build failed with exit code $LASTEXITCODE."
     exit $LASTEXITCODE
@@ -168,5 +206,9 @@ if ($LASTEXITCODE -ne 0) {
 $output = Join-Path $PSScriptRoot "src\AutoCAD.AITranslate\bin\$Configuration\net8.0-windows\AutoCAD.AITranslate.dll"
 Write-Host ""
 Write-Host "Build succeeded." -ForegroundColor Green
-Write-Host "Load in AutoCAD with NETLOAD, then pick:"
-Write-Host "  $output"
+Write-Host "Output: $output"
+Write-Host ""
+Write-Host "Next steps:"
+Write-Host "  1. Copy AutoCAD.AITranslate.settings.json.example to AutoCAD.AITranslate.settings.json"
+Write-Host "     next to the DLL and fill in OPENAI_API_KEY."
+Write-Host "  2. In AutoCAD run NETLOAD and pick the DLL above."
