@@ -1,7 +1,0 @@
-{
-  "OPENAI_API_KEY": "sk-",
-  "OPENAI_MODEL": "deepseek-chat",
-  "OPENAI_BASE_URL": "https://api.deepseek.com",
-  "OPENAI_API_TYPE": "chat_completions",
-   "OPENAI_SYSTEM_PROMPT": "You are a helpful assistant."
-}

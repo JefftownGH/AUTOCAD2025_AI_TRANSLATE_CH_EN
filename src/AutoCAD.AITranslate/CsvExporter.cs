@@ -8,11 +8,20 @@ namespace AutoCAD.AITranslate
 {
     internal static class CsvExporter
     {
-        public static void Export(Editor editor, List<TranslationRecord> records)
+        /// <summary>
+        /// Prompts for a destination and writes the translation pairs.
+        /// </summary>
+        /// <remarks>
+        /// Deliberately swallows its own errors: by the time this runs the translations
+        /// have already been applied to the drawing, so a failed export must not surface
+        /// as "translation failed", which is what used to happen when the write threw
+        /// its way up to the command-level catch block.
+        /// </remarks>
+        public static bool TryExport(Editor editor, List<TranslationRecord> records)
         {
-            if (records == null || records.Count == 0)
+            if (editor == null || records == null || records.Count == 0)
             {
-                return;
+                return false;
             }
 
             var options = new PromptSaveFileOptions("\nExport translation CSV?")
@@ -20,18 +29,27 @@ namespace AutoCAD.AITranslate
                 Filter = "CSV (*.csv)|*.csv",
                 DialogCaption = "Save Translation CSV",
                 InitialDirectory = Environment.GetFolderPath(Environment.SpecialFolder.Desktop),
-                InitialFileName = "translations.csv"
+                InitialFileName = $"translations-{DateTime.Now:yyyyMMdd-HHmmss}.csv"
             };
 
             var result = editor.GetFileNameForSave(options);
             if (result.Status != PromptStatus.OK || string.IsNullOrWhiteSpace(result.StringResult))
             {
-                return;
+                return false;
             }
 
             var path = result.StringResult;
-            WriteCsv(path, records);
-            editor.WriteMessage($"\nCSV exported: {path}");
+            try
+            {
+                WriteCsv(path, records);
+                editor.WriteMessage($"\nCSV exported: {path}");
+                return true;
+            }
+            catch (Exception ex)
+            {
+                editor.WriteMessage($"\nWarning: translation applied but CSV export failed: {ex.Message}");
+                return false;
+            }
         }
 
         private static void WriteCsv(string path, List<TranslationRecord> records)
@@ -40,26 +58,42 @@ namespace AutoCAD.AITranslate
             sb.AppendLine("Original,Translated");
             foreach (var record in records)
             {
-                sb.AppendLine($"{Escape(record.OriginalText)},{Escape(record.TranslatedText)}");
+                sb.Append(Escape(record.OriginalText));
+                sb.Append(',');
+                sb.AppendLine(Escape(record.TranslatedText));
             }
 
-            var bytes = Encoding.UTF8.GetPreamble();
-            var content = Encoding.UTF8.GetBytes(sb.ToString());
-            using (var stream = new FileStream(path, FileMode.Create, FileAccess.Write, FileShare.None))
-            {
-                stream.Write(bytes, 0, bytes.Length);
-                stream.Write(content, 0, content.Length);
-            }
+            // UTF-8 with a BOM so that Excel on Windows detects the encoding and renders
+            // the Chinese characters correctly.
+            var encoding = new UTF8Encoding(encoderShouldEmitUTF8Identifier: true);
+            using var writer = new StreamWriter(path, append: false, encoding);
+            writer.Write(sb.ToString());
         }
 
-        private static string Escape(string value)
+        /// <summary>
+        /// RFC 4180 field escaping.
+        /// </summary>
+        /// <remarks>
+        /// The previous version only escaped double quotes. MText content regularly
+        /// contains real newlines once \P has been normalised, and an unescaped newline
+        /// splits one record across two rows, corrupting the whole file. Line breaks are
+        /// now escaped to the literal two-character sequences \n and \r so that every
+        /// record stays on exactly one line.
+        /// </remarks>
+        internal static string Escape(string value)
         {
             if (value == null)
             {
                 return "\"\"";
             }
 
-            var escaped = value.Replace("\"", "\"\"");
+            var escaped = value
+                .Replace("\\", "\\\\")
+                .Replace("\"", "\"\"")
+                .Replace("\r\n", "\\n")
+                .Replace("\n", "\\n")
+                .Replace("\r", "\\n");
+
             return $"\"{escaped}\"";
         }
     }

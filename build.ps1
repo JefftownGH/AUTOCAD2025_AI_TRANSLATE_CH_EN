@@ -28,17 +28,16 @@ function Resolve-MSBuild {
         return $fallback
     }
 
-    return "msbuild"
+    return $null
 }
 
-function Has-SdkPrefix([string]$prefix) {
-    $sdks = & dotnet --list-sdks 2>$null
-    foreach ($line in $sdks) {
-        if ($line -like "$prefix*") {
-            return $true
-        }
+function Get-DotNetSdks {
+    $dotnet = Get-Command dotnet -ErrorAction SilentlyContinue
+    if (-not $dotnet) {
+        return @()
     }
-    return $false
+
+    return @(& dotnet --list-sdks 2>$null)
 }
 
 function Get-ShortPath([string]$path) {
@@ -60,49 +59,96 @@ public static extern int GetShortPathName(string lpszLongPath, System.Text.Strin
     return $path
 }
 
+# ---------------------------------------------------------------------------
+# Locate the AutoCAD managed assemblies. Newest release first.
+# ---------------------------------------------------------------------------
 if (-not $AutoCADPath) {
     $candidates = @(
+        "${env:ProgramFiles}\Autodesk\AutoCAD 2027",
+        "${env:ProgramFiles}\Autodesk\AutoCAD 2026",
         "${env:ProgramFiles}\Autodesk\AutoCAD 2025",
         "${env:ProgramFiles}\Autodesk\AutoCAD 2024"
     )
     foreach ($candidate in $candidates) {
-        if (Test-Path $candidate) {
+        if (Test-Path (Join-Path $candidate "AcMgd.dll")) {
             $AutoCADPath = $candidate
             break
         }
     }
 }
 
-if ($AutoCADPath) {
-    $env:AUTOCAD_2025_PATH = $AutoCADPath
-    $env:AUTOCAD_2024_PATH = $AutoCADPath
+if (-not $AutoCADPath) {
+    Write-Error @"
+AutoCAD managed assemblies were not found.
+
+Looked in:
+$("  " + ((@(
+    "${env:ProgramFiles}\Autodesk\AutoCAD 2027",
+    "${env:ProgramFiles}\Autodesk\AutoCAD 2026",
+    "${env:ProgramFiles}\Autodesk\AutoCAD 2025",
+    "${env:ProgramFiles}\Autodesk\AutoCAD 2024"
+)) -join "`n  "))
+
+Pass the install directory explicitly, for example:
+  .\build.ps1 -AutoCADPath "C:\Program Files\Autodesk\AutoCAD 2026"
+"@
+    exit 1
 }
 
+$env:AUTOCAD_PATH = $AutoCADPath
+$env:AUTOCAD_2025_PATH = $AutoCADPath
+$env:AUTOCAD_2024_PATH = $AutoCADPath
+
+# ---------------------------------------------------------------------------
+# Prerequisite checks, reported up front rather than as a confusing build error.
+# ---------------------------------------------------------------------------
 $msbuild = Resolve-MSBuild
+$sdks = Get-DotNetSdks
+$hasNet8 = $false
+foreach ($line in $sdks) {
+    if ($line -like "8.*") {
+        $hasNet8 = $true
+        break
+    }
+}
+
+Write-Host "AutoCAD assemblies : $AutoCADPath"
+Write-Host "Configuration      : $Configuration"
+if ($msbuild) {
+    Write-Host "MSBuild            : $msbuild"
+} else {
+    Write-Host "MSBuild            : not found on this machine"
+}
+Write-Host "dotnet SDKs        : $(if ($sdks.Count -gt 0) { ($sdks -join ', ') } else { 'none detected' })"
+
+$blocking = @()
+if (-not $hasNet8) {
+    $blocking += "The .NET 8 SDK is required to build a net8.0-windows project. Install it from https://dotnet.microsoft.com/download/dotnet/8.0 (the .NET *runtime* alone is not sufficient)."
+}
+if (-not $msbuild) {
+    $blocking += "MSBuild was not found. Install Visual Studio 2022 (Desktop development with C++ / .NET desktop workload) or the standalone Build Tools."
+}
+
+if ($blocking.Count -gt 0) {
+    Write-Host ""
+    Write-Host "Cannot build yet:" -ForegroundColor Yellow
+    foreach ($item in $blocking) {
+        Write-Host "  - $item" -ForegroundColor Yellow
+    }
+    exit 1
+}
+
+# ---------------------------------------------------------------------------
+# Build
+# ---------------------------------------------------------------------------
 $project = Join-Path $PSScriptRoot "src\AutoCAD.AITranslate\AutoCAD.AITranslate.csproj"
-
-Write-Host "Using MSBuild: $msbuild"
-Write-Host "Project: $project"
-Write-Host "Configuration: $Configuration"
-if ($env:AUTOCAD_2025_PATH) {
-    Write-Host "AUTOCAD_2025_PATH: $env:AUTOCAD_2025_PATH"
-} elseif ($env:AUTOCAD_2024_PATH) {
-    Write-Host "AUTOCAD_2024_PATH: $env:AUTOCAD_2024_PATH"
-}
-
-if (-not (Has-SdkPrefix "8.")) {
-    Write-Host "Warning: .NET 8 SDK not detected. Install it to build net8.0-windows projects."
-}
 
 $msbuildArgs = @(
     $project,
     "/restore",
-    "/p:Configuration=$Configuration"
+    "/p:Configuration=$Configuration",
+    "/p:AutoCADInstallDir=$AutoCADPath"
 )
-
-if ($AutoCADPath) {
-    $msbuildArgs += "/p:AutoCADInstallDir=$AutoCADPath"
-}
 
 if (-not $OnlineRestore) {
     $offlineSource = "${env:ProgramFiles(x86)}\Microsoft SDKs\NuGetPackages\"
@@ -114,3 +160,13 @@ if (-not $OnlineRestore) {
 }
 
 & $msbuild @msbuildArgs
+if ($LASTEXITCODE -ne 0) {
+    Write-Error "Build failed with exit code $LASTEXITCODE."
+    exit $LASTEXITCODE
+}
+
+$output = Join-Path $PSScriptRoot "src\AutoCAD.AITranslate\bin\$Configuration\net8.0-windows\AutoCAD.AITranslate.dll"
+Write-Host ""
+Write-Host "Build succeeded." -ForegroundColor Green
+Write-Host "Load in AutoCAD with NETLOAD, then pick:"
+Write-Host "  $output"

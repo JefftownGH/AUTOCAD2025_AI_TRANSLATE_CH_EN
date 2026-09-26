@@ -4,14 +4,57 @@
     <RootNamespace>AutoCAD.AITranslate</RootNamespace>
     <AssemblyName>AutoCAD.AITranslate</AssemblyName>
     <LangVersion>latest</LangVersion>
+    <Nullable>disable</Nullable>
     <Platforms>x64</Platforms>
     <PlatformTarget>x64</PlatformTarget>
     <Prefer32Bit>false</Prefer32Bit>
-    <AutoCADInstallDir Condition="'$(AUTOCAD_2025_PATH)' != ''">$(AUTOCAD_2025_PATH)</AutoCADInstallDir>
-    <AutoCADInstallDir Condition="'$(AutoCADInstallDir)' == '' and '$(AUTOCAD_2024_PATH)' != ''">$(AUTOCAD_2024_PATH)</AutoCADInstallDir>
-    <AutoCADInstallDir Condition="'$(AutoCADInstallDir)' == '' and '$(ProgramFiles)' != ''">$(ProgramFiles)\Autodesk\AutoCAD 2025</AutoCADInstallDir>
-    <AutoCADInstallDir Condition="'$(AutoCADInstallDir)' == '' and '$(ProgramFiles)' != ''">$(ProgramFiles)\Autodesk\AutoCAD 2024</AutoCADInstallDir>
+    <Version>2.0.0</Version>
+    <AssemblyVersion>2.0.0.0</AssemblyVersion>
+    <FileVersion>2.0.0.0</FileVersion>
+    <Product>AutoCAD AI Translator</Product>
+    <Description>Translates Chinese text in AutoCAD drawings to English via an OpenAI-compatible API.</Description>
+    <GenerateDocumentationFile>false</GenerateDocumentationFile>
   </PropertyGroup>
+
+  <!--
+    AutoCAD managed assembly resolution.
+
+    An explicit AutoCADInstallDir (or the AUTOCAD_2025_PATH / AUTOCAD_2024_PATH
+    environment variables) always wins. Otherwise the newest installed release is
+    probed. Order matters: the previous version tested `AutoCADInstallDir == ''` for
+    the 2024 fallback after already assigning the 2025 default under the same
+    condition, so the 2024 line could never run.
+  -->
+  <PropertyGroup>
+    <AutoCADInstallDir Condition="'$(AutoCADInstallDir)' == '' and '$(AUTOCAD_2025_PATH)' != ''">$(AUTOCAD_2025_PATH)</AutoCADInstallDir>
+    <AutoCADInstallDir Condition="'$(AutoCADInstallDir)' == '' and '$(AUTOCAD_2024_PATH)' != ''">$(AUTOCAD_2024_PATH)</AutoCADInstallDir>
+    <AutoCADInstallDir Condition="'$(AutoCADInstallDir)' == '' and '$(AUTOCAD_PATH)' != ''">$(AUTOCAD_PATH)</AutoCADInstallDir>
+  </PropertyGroup>
+
+  <!-- Probe known install locations, newest first. -->
+  <PropertyGroup>
+    <_AcadCandidate2027>$(ProgramFiles)\Autodesk\AutoCAD 2027</_AcadCandidate2027>
+    <_AcadCandidate2026>$(ProgramFiles)\Autodesk\AutoCAD 2026</_AcadCandidate2026>
+    <_AcadCandidate2025>$(ProgramFiles)\Autodesk\AutoCAD 2025</_AcadCandidate2025>
+    <_AcadCandidate2024>$(ProgramFiles)\Autodesk\AutoCAD 2024</_AcadCandidate2024>
+  </PropertyGroup>
+
+  <PropertyGroup Condition="'$(AutoCADInstallDir)' == ''">
+    <AutoCADInstallDir Condition="Exists('$(_AcadCandidate2027)\AcMgd.dll')">$(_AcadCandidate2027)</AutoCADInstallDir>
+    <AutoCADInstallDir Condition="'$(AutoCADInstallDir)' == '' and Exists('$(_AcadCandidate2026)\AcMgd.dll')">$(_AcadCandidate2026)</AutoCADInstallDir>
+    <AutoCADInstallDir Condition="'$(AutoCADInstallDir)' == '' and Exists('$(_AcadCandidate2025)\AcMgd.dll')">$(_AcadCandidate2025)</AutoCADInstallDir>
+    <AutoCADInstallDir Condition="'$(AutoCADInstallDir)' == '' and Exists('$(_AcadCandidate2024)\AcMgd.dll')">$(_AcadCandidate2024)</AutoCADInstallDir>
+  </PropertyGroup>
+
+  <PropertyGroup>
+    <AutoCADInstallDir Condition="'$(AutoCADInstallDir)' == ''">$(ProgramFiles)\Autodesk\AutoCAD 2025</AutoCADInstallDir>
+  </PropertyGroup>
+
+  <Target Name="VerifyAutoCadReference" BeforeTargets="ResolveAssemblyReferences">
+    <Warning Condition="!Exists('$(AutoCADInstallDir)\AcMgd.dll')"
+             Text="AutoCAD managed assemblies not found at '$(AutoCADInstallDir)'. Set the AUTOCAD_2025_PATH environment variable, or pass -AutoCADPath to build.ps1 (e.g. 'C:\Program Files\Autodesk\AutoCAD 2026')." />
+    <Message Importance="high" Text="Referencing AutoCAD assemblies from: $(AutoCADInstallDir)" />
+  </Target>
 
   <ItemGroup>
     <Reference Include="AcCoreMgd">
@@ -29,6 +72,7 @@
   </ItemGroup>
 
   <ItemGroup>
-    <None Include="AutoCAD.AITranslate.settings.json" CopyToOutputDirectory="PreserveNewest" />
+    <None Include="AutoCAD.AITranslate.settings.json" CopyToOutputDirectory="PreserveNewest" Condition="Exists('AutoCAD.AITranslate.settings.json')" />
+    <None Include="AutoCAD.AITranslate.settings.json.example" CopyToOutputDirectory="PreserveNewest" Condition="Exists('AutoCAD.AITranslate.settings.json.example')" />
   </ItemGroup>
 </Project>
