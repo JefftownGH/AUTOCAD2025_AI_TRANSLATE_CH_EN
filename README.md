@@ -9,6 +9,9 @@ Targets **.NET 8 (x64)** and works with AutoCAD 2024 / 2025 / 2026 and later x64
 
 ## Features
 
+- **Ribbon tab** - an "AI 翻译" tab with buttons for every function, no command typing needed
+- **Model settings dialog** - configure the API key, model, base URL, etc. in a window
+  (Ribbon > 模型设置, or run `AI_TRANSLATE_SETTINGS`), with a built-in connection test
 - **One command to translate a whole drawing** - scans ModelSpace and PaperSpace
 - **Selection-scoped translation** - only processes what you pick
 - **Non-destructive by default** - translated copies go on a dedicated `AI_TRANSLATED`
@@ -59,6 +62,11 @@ src\AutoCAD.AITranslate\bin\Release\net8.0-windows\AutoCAD.AITranslate.dll
 ---
 
 ## Configuration
+
+The easiest way is the built-in settings dialog: **Ribbon "AI 翻译" tab > 模型设置**
+(or run `AI_TRANSLATE_SETTINGS` in the command line). It edits
+`AutoCAD.AITranslate.settings.json` next to the assembly, offers provider presets
+(OpenAI / DeepSeek / 智谱 / 通义 / Moonshot), and has a "测试连接" button.
 
 Environment variables take precedence over the JSON settings file. The file is read from
 the directory containing the assembly:
@@ -122,7 +130,11 @@ The plugin prints a short confirmation with the detected AutoCAD version when it
 | `AI_TRANSLATE_ZH2EN` | Translate all Chinese text in ModelSpace and PaperSpace |
 | `AI_TRANSLATE_ZH2EN_SEL` | Translate only the selected text |
 | `AI_TRANSLATE_ROLLBACK` | Undo the most recent translation in the current drawing |
+| `AI_TRANSLATE_SETTINGS` | Open the model settings dialog |
 | `AI_TRANSLATE_CLEAR_CACHE` | Free the in-memory translation cache |
+
+All commands are also available as buttons on the **"AI 翻译"** Ribbon tab: 翻译全图 /
+翻译选区 / 回滚翻译 / 模型设置 / 清空缓存. The tab is created when the plugin loads.
 
 ### Typical run
 
@@ -214,6 +226,8 @@ AUTOCAD2025_AI_TRANSLATE_CH_EN/
 ├── README.md
 └── src/AutoCAD.AITranslate/
     ├── Commands.cs                        AutoCAD command entry points and UI
+    ├── RibbonSetup.cs                     Ribbon tab and buttons
+    ├── SettingsDialog.xaml(.cs)           Model settings dialog (WPF)
     ├── OpenAiClient.cs                    HTTP transport, API protocol, JSON parsing
     ├── TranslationService.cs              Batching, caching, configuration
     ├── TranslationSession.cs              Per-document rollback state

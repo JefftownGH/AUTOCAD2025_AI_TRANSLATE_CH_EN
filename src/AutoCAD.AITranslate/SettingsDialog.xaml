@@ -1,0 +1,258 @@
+<Window x:Class="AutoCAD.AITranslate.SettingsDialog"
+        xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
+        xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+        Title="模型设置 — AutoCAD AI 翻译"
+        Width="880" Height="660"
+        MinWidth="760" MinHeight="560"
+        WindowStartupLocation="CenterScreen"
+        ShowInTaskbar="False">
+
+    <Window.Resources>
+        <!-- Provider name shown inside the list row -->
+        <Style x:Key="ProviderNameText" TargetType="TextBlock">
+            <Setter Property="VerticalAlignment" Value="Center"/>
+            <Setter Property="Margin" Value="8,0,0,0"/>
+            <Setter Property="TextTrimming" Value="CharacterEllipsis"/>
+        </Style>
+
+        <!-- Small grey caption used for hints and group headers -->
+        <Style x:Key="CaptionText" TargetType="TextBlock">
+            <Setter Property="FontSize" Value="11"/>
+            <Setter Property="Foreground" Value="#777777"/>
+            <Setter Property="TextWrapping" Value="Wrap"/>
+        </Style>
+
+        <Style x:Key="SectionHeader" TargetType="TextBlock">
+            <Setter Property="FontSize" Value="11"/>
+            <Setter Property="FontWeight" Value="SemiBold"/>
+            <Setter Property="Foreground" Value="#666666"/>
+            <Setter Property="Margin" Value="2,0,0,6"/>
+        </Style>
+
+        <!-- One preset row: dot + name + (built-in tag) -->
+        <DataTemplate x:Key="ProviderRowTemplate">
+            <Grid Margin="0,1">
+                <Grid.ColumnDefinitions>
+                    <ColumnDefinition Width="Auto"/>
+                    <ColumnDefinition Width="*"/>
+                    <ColumnDefinition Width="Auto"/>
+                </Grid.ColumnDefinitions>
+
+                <Ellipse Grid.Column="0" Width="7" Height="7" VerticalAlignment="Center"
+                         Fill="{Binding StatusBrush}"/>
+
+                <TextBlock Grid.Column="1" Text="{Binding DisplayName}"
+                           Style="{StaticResource ProviderNameText}"/>
+
+                <Border Grid.Column="2" Background="#E8E8E8" CornerRadius="2"
+                        Padding="5,1" Margin="6,0,2,0" VerticalAlignment="Center"
+                        Visibility="{Binding BuiltInTagVisibility}">
+                    <TextBlock Text="内置" FontSize="10" Foreground="#666666"/>
+                </Border>
+            </Grid>
+        </DataTemplate>
+
+        <!-- Field label -->
+        <Style x:Key="FieldLabel" TargetType="TextBlock">
+            <Setter Property="VerticalAlignment" Value="Center"/>
+            <Setter Property="Margin" Value="0,0,8,6"/>
+        </Style>
+    </Window.Resources>
+
+    <Grid Margin="16,14,16,12">
+        <Grid.RowDefinitions>
+            <RowDefinition Height="Auto"/>  <!-- header + toolbar -->
+            <RowDefinition Height="*"/>     <!-- two panes -->
+            <RowDefinition Height="Auto"/>  <!-- env warning -->
+            <RowDefinition Height="Auto"/>  <!-- buttons -->
+            <RowDefinition Height="Auto"/>  <!-- status -->
+        </Grid.RowDefinitions>
+
+        <!-- ============ Row 0: title, subtitle, toolbar ============ -->
+        <Grid Grid.Row="0" Margin="0,0,0,10">
+            <Grid.ColumnDefinitions>
+                <ColumnDefinition Width="*"/>
+                <ColumnDefinition Width="Auto"/>
+            </Grid.ColumnDefinitions>
+
+            <StackPanel Grid.Column="0" VerticalAlignment="Center">
+                <TextBlock Text="模型设置" FontSize="17" FontWeight="SemiBold"/>
+                <TextBlock Style="{StaticResource CaptionText}" Margin="0,3,0,0"
+                           Text="管理模型供应商，配置后可在翻译时选择使用。"/>
+            </StackPanel>
+
+            <StackPanel Grid.Column="1" Orientation="Horizontal" VerticalAlignment="Center">
+                <Button x:Name="ReloadButton" Content="重新载入" Height="28" Padding="10,0"
+                        Margin="0,0,8,0" Click="ReloadButton_Click"
+                        ToolTip="放弃未保存的修改，重新从配置文件载入方案列表"/>
+                <Button x:Name="AddButton" Content="+ 添加供应商" Height="28" Padding="12,0"
+                        Click="AddButton_Click"
+                        ToolTip="基于当前填写的内容新增一个供应商方案"/>
+            </StackPanel>
+        </Grid>
+
+        <!-- ============ Row 1: two panes ============ -->
+        <Border Grid.Row="1" BorderBrush="#E0E0E0" BorderThickness="1" CornerRadius="4">
+            <Grid>
+                <Grid.ColumnDefinitions>
+                    <ColumnDefinition Width="212" MinWidth="170"/>
+                    <ColumnDefinition Width="5"/>
+                    <ColumnDefinition Width="*" MinWidth="420"/>
+                </Grid.ColumnDefinitions>
+
+                <!-- ======== Left pane: provider list ======== -->
+                <DockPanel Grid.Column="0" Margin="8,8,4,8">
+                    <TextBlock DockPanel.Dock="Top" Text="已配置"
+                               Style="{StaticResource SectionHeader}"/>
+
+                    <ListBox x:Name="PresetList" BorderThickness="0" Background="Transparent"
+                             HorizontalContentAlignment="Stretch"
+                             ItemTemplate="{StaticResource ProviderRowTemplate}"
+                             SelectionChanged="PresetList_SelectionChanged"
+                             ScrollViewer.HorizontalScrollBarVisibility="Disabled"/>
+
+                    <StackPanel DockPanel.Dock="Bottom" Orientation="Horizontal" Margin="0,8,0,0">
+                        <Button x:Name="RenameButton" Content="重命名" Height="26" Width="70"
+                                Click="RenameButton_Click"
+                                ToolTip="给当前选中的供应商改名（内置项会另存为副本）"/>
+                        <Button x:Name="DeleteButton" Content="删除" Height="26" Width="58"
+                                Margin="6,0,0,0" Click="DeleteButton_Click"
+                                ToolTip="删除当前选中的供应商（内置项不可删除）"/>
+                    </StackPanel>
+                </DockPanel>
+
+                <!-- ======== splitter ======== -->
+                <GridSplitter Grid.Column="1" Width="5" HorizontalAlignment="Stretch"
+                              Background="#F0F0F0" ShowsPreview="True"/>
+
+                <!-- ======== Right pane: detail form ======== -->
+                <ScrollViewer Grid.Column="2" VerticalScrollBarVisibility="Auto"
+                              Padding="14,10,14,10">
+                    <StackPanel>
+                        <!-- Detail header -->
+                        <TextBlock x:Name="DetailTitle" FontSize="15" FontWeight="SemiBold"
+                                   Text="未选择供应商" TextTrimming="CharacterEllipsis"/>
+                        <TextBlock x:Name="DetailSubtitle" Style="{StaticResource CaptionText}"
+                                   Margin="0,3,0,14"/>
+
+                        <Grid>
+                            <Grid.RowDefinitions>
+                                <RowDefinition Height="Auto"/>
+                                <RowDefinition Height="Auto"/>
+                                <RowDefinition Height="Auto"/>
+                                <RowDefinition Height="Auto"/>
+                                <RowDefinition Height="Auto"/>
+                                <RowDefinition Height="Auto"/>
+                                <RowDefinition Height="Auto"/>
+                                <RowDefinition Height="Auto"/>
+                            </Grid.RowDefinitions>
+                            <Grid.ColumnDefinitions>
+                                <ColumnDefinition Width="92"/>
+                                <ColumnDefinition Width="*"/>
+                            </Grid.ColumnDefinitions>
+
+                            <!-- API key -->
+                            <TextBlock Grid.Row="0" Grid.Column="0" Text="API Key" Style="{StaticResource FieldLabel}"/>
+                            <StackPanel Grid.Row="0" Grid.Column="1" Margin="0,0,0,6">
+                                <Grid>
+                                    <PasswordBox x:Name="ApiKeyBox" VerticalContentAlignment="Center"/>
+                                    <TextBox x:Name="ApiKeyPlain" Visibility="Collapsed"
+                                             VerticalContentAlignment="Center"/>
+                                </Grid>
+                                <CheckBox x:Name="ShowKeyToggle" Content="以明文显示" FontSize="11"
+                                          Margin="0,6,0,0"
+                                          Checked="ShowKeyToggle_Changed"
+                                          Unchecked="ShowKeyToggle_Changed"/>
+                            </StackPanel>
+
+                            <!-- Model -->
+                            <TextBlock Grid.Row="1" Grid.Column="0" Text="模型 ID" Style="{StaticResource FieldLabel}"/>
+                            <ComboBox Grid.Row="1" Grid.Column="1" x:Name="ModelBox" IsEditable="True"
+                                      Margin="0,0,0,6" VerticalContentAlignment="Center"
+                                      ToolTip="模型名称，可直接输入任意模型 ID"/>
+
+                            <!-- Base URL -->
+                            <TextBlock Grid.Row="2" Grid.Column="0" Text="接口地址" Style="{StaticResource FieldLabel}"/>
+                            <StackPanel Grid.Row="2" Grid.Column="1" Margin="0,0,0,6">
+                                <ComboBox x:Name="BaseUrlBox" IsEditable="True"
+                                          VerticalContentAlignment="Center"
+                                          ToolTip="OpenAI 兼容接口的基础地址"/>
+                                <TextBlock x:Name="BaseUrlHint" Style="{StaticResource CaptionText}"
+                                           Margin="0,4,0,0" Visibility="Collapsed"/>
+                            </StackPanel>
+
+                            <!-- API type -->
+                            <TextBlock Grid.Row="3" Grid.Column="0" Text="接口类型" Style="{StaticResource FieldLabel}"/>
+                            <ComboBox Grid.Row="3" Grid.Column="1" x:Name="ApiTypeBox" Margin="0,0,0,6"
+                                      ToolTip="auto：先试 Responses 接口，404 时自动改用 Chat Completions">
+                                <ComboBoxItem Content="auto（自动）" Tag="auto"/>
+                                <ComboBoxItem Content="responses（OpenAI Responses）" Tag="responses"/>
+                                <ComboBoxItem Content="chat_completions（Chat 接口）" Tag="chat_completions"/>
+                            </ComboBox>
+
+                            <!-- Timeout -->
+                            <TextBlock Grid.Row="4" Grid.Column="0" Text="超时(毫秒)" Style="{StaticResource FieldLabel}"/>
+                            <TextBox Grid.Row="4" Grid.Column="1" x:Name="TimeoutBox" Margin="0,0,0,6"
+                                     Width="150" HorizontalAlignment="Left" VerticalContentAlignment="Center"
+                                     ToolTip="单次请求超时时间，默认 60000。国内服务商响应较慢时建议 90000 以上"/>
+
+                            <!-- Org / Project -->
+                            <TextBlock Grid.Row="5" Grid.Column="0" Text="组织 / 项目" Style="{StaticResource FieldLabel}"/>
+                            <Grid Grid.Row="5" Grid.Column="1" Margin="0,0,0,6">
+                                <Grid.ColumnDefinitions>
+                                    <ColumnDefinition Width="*"/>
+                                    <ColumnDefinition Width="Auto"/>
+                                    <ColumnDefinition Width="*"/>
+                                </Grid.ColumnDefinitions>
+                                <TextBox Grid.Column="0" x:Name="OrgBox" VerticalContentAlignment="Center"
+                                         ToolTip="OPENAI_ORG，OpenAI 组织 ID，其他服务商留空"/>
+                                <TextBlock Grid.Column="1" Text=" / " VerticalAlignment="Center" Margin="4,0"/>
+                                <TextBox Grid.Column="2" x:Name="ProjectBox" VerticalContentAlignment="Center"
+                                         ToolTip="OPENAI_PROJECT，OpenAI 项目 ID，其他服务商留空"/>
+                            </Grid>
+
+                            <!-- System prompt -->
+                            <TextBlock Grid.Row="6" Grid.Column="0" Text="系统提示词" VerticalAlignment="Top"
+                                       Margin="0,6,8,6"/>
+                            <StackPanel Grid.Row="6" Grid.Column="1" Margin="0,0,0,6">
+                                <TextBox x:Name="SystemPromptBox" AcceptsReturn="True" TextWrapping="Wrap"
+                                         VerticalContentAlignment="Top" VerticalScrollBarVisibility="Auto"
+                                         Height="74"
+                                         ToolTip="仅 Chat 接口生效，发送给模型的角色设定；翻译提示词已内置，一般留空"/>
+                                <TextBlock Style="{StaticResource CaptionText}" Margin="0,4,0,0"
+                                           Text="仅 Chat 接口生效。翻译提示词已内置，一般留空。"/>
+                            </StackPanel>
+                        </Grid>
+                    </StackPanel>
+                </ScrollViewer>
+            </Grid>
+        </Border>
+
+        <!-- ============ Row 2: environment override warning ============ -->
+        <TextBlock Grid.Row="2" x:Name="EnvWarningText" Foreground="#B26A00"
+                   TextWrapping="Wrap" Margin="0,8,0,0" Visibility="Collapsed"/>
+
+        <!-- ============ Row 3: buttons ============ -->
+        <Grid Grid.Row="3" Margin="0,12,0,0">
+            <Grid.ColumnDefinitions>
+                <ColumnDefinition Width="Auto"/>
+                <ColumnDefinition Width="*"/>
+                <ColumnDefinition Width="Auto"/>
+            </Grid.ColumnDefinitions>
+
+            <Button Grid.Column="0" x:Name="TestButton" Content="测试连接" Width="96" Height="28"
+                    Click="TestButton_Click"/>
+
+            <StackPanel Grid.Column="2" Orientation="Horizontal">
+                <Button x:Name="SaveButton" Content="保存" Width="96" Height="28" Margin="0,0,10,0"
+                        Click="SaveButton_Click" IsDefault="True"/>
+                <Button x:Name="CancelButton" Content="取消" Width="96" Height="28"
+                        Click="CancelButton_Click" IsCancel="True"/>
+            </StackPanel>
+        </Grid>
+
+        <!-- ============ Row 4: status ============ -->
+        <TextBlock Grid.Row="4" x:Name="StatusText" TextWrapping="Wrap" Margin="0,10,0,0"
+                   Foreground="#444444"/>
+    </Grid>
+</Window>

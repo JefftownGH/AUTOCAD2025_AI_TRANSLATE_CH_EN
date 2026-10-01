@@ -3,6 +3,7 @@ using System.Collections.Generic;
 using System.IO;
 using System.Linq;
 using System.Reflection;
+using System.Text.Encodings.Web;
 using System.Text.Json;
 using System.Threading;
 using System.Threading.Tasks;
@@ -349,8 +350,37 @@ namespace AutoCAD.AITranslate
     /// </summary>
     internal static class Settings
     {
-        private static readonly Lazy<Dictionary<string, string>> LocalSettings =
-            new Lazy<Dictionary<string, string>>(LoadLocalSettings, true);
+        // Reloadable rather than Lazy<T>: saving new values from the settings dialog
+        // must invalidate the snapshot so the next command run picks them up.
+        private static Dictionary<string, string> _local;
+        private static bool _loaded;
+
+        private static Dictionary<string, string> LocalSettings
+        {
+            get
+            {
+                if (!_loaded)
+                {
+                    _local = LoadLocalSettings();
+                    _loaded = true;
+                }
+
+                return _local;
+            }
+        }
+
+        /// <summary>Known configuration keys, in the order they are written to the file.</summary>
+        public static readonly string[] KnownKeys =
+        {
+            "OPENAI_API_KEY",
+            "OPENAI_MODEL",
+            "OPENAI_BASE_URL",
+            "OPENAI_API_TYPE",
+            "OPENAI_SYSTEM_PROMPT",
+            "OPENAI_TIMEOUT_MS",
+            "OPENAI_ORG",
+            "OPENAI_PROJECT"
+        };
 
         public static string Read(string key)
         {
@@ -360,7 +390,30 @@ namespace AutoCAD.AITranslate
                 return fromEnv;
             }
 
-            var file = LocalSettings.Value;
+            var file = LocalSettings;
+            if (file.TryGetValue(key, out var fromFile) && !string.IsNullOrWhiteSpace(fromFile))
+            {
+                return fromFile;
+            }
+
+            return null;
+        }
+
+        /// <summary>
+        /// Reads a key without consulting environment variables and without the
+        /// string-only restriction of <see cref="Read"/>. Used for structured values
+        /// such as the preset array, which is stored as a JSON array and therefore
+        /// is not a string in the settings file.
+        /// </summary>
+        /// <remarks>
+        /// Environment variables are deliberately skipped: presets are a UI concern
+        /// rather than a deployment knob, and there is no sensible way to express an
+        /// array in an environment variable. Active connection settings continue to
+        /// honour the environment through <see cref="Read"/>.
+        /// </remarks>
+        public static string ReadRaw(string key)
+        {
+            var file = LocalSettings;
             if (file.TryGetValue(key, out var fromFile) && !string.IsNullOrWhiteSpace(fromFile))
             {
                 return fromFile;
@@ -397,6 +450,150 @@ namespace AutoCAD.AITranslate
             }
         }
 
+        /// <summary>
+        /// Writes the given values to the settings JSON file next to the assembly,
+        /// preserving any unrelated keys already present. Clears the cached snapshot so
+        /// the next Read() sees the new values.
+        /// </summary>
+        /// <returns>true when the file was written successfully.</returns>
+        public static bool Write(IEnumerable<KeyValuePair<string, string>> values)
+        {
+            var path = SettingsFilePath;
+            if (string.IsNullOrWhiteSpace(path))
+            {
+                return false;
+            }
+
+            try
+            {
+                var merged = new Dictionary<string, string>(StringComparer.OrdinalIgnoreCase);
+                if (File.Exists(path))
+                {
+                    try
+                    {
+                        using var doc = JsonDocument.Parse(File.ReadAllText(path));
+                        if (doc.RootElement.ValueKind == JsonValueKind.Object)
+                        {
+                            foreach (var property in doc.RootElement.EnumerateObject())
+                            {
+                                merged[property.Name] = property.Value.ValueKind == JsonValueKind.String
+                                    ? property.Value.GetString() ?? string.Empty
+                                    : property.Value.GetRawText();
+                            }
+                        }
+                    }
+                    catch (JsonException)
+                    {
+                        // Unreadable existing file: start over with a fresh document
+                        // rather than blocking the user from saving a good one.
+                        merged.Clear();
+                    }
+                }
+
+                foreach (var pair in values)
+                {
+                    merged[pair.Key] = pair.Value ?? string.Empty;
+                }
+
+                // Unchecked JSON escapes would turn Chinese system prompts into \uXXXX
+                // noise; write them verbatim so the file stays human-editable.
+                var options = new JsonSerializerOptions
+                {
+                    WriteIndented = true,
+                    Encoder = JavaScriptEncoder.UnsafeRelaxedJsonEscaping
+                };
+
+                // Values that are themselves JSON (the preset array, or a bare number)
+                // must be emitted as JSON, not re-encoded as a quoted string. Detect
+                // them and splice the raw text in, so the file stays structured and
+                // PresetStore can deserialize it on the next load.
+                using (var stream = new FileStream(path, FileMode.Create, FileAccess.Write, FileShare.None))
+                using (var writer = new Utf8JsonWriter(stream, new JsonWriterOptions
+                {
+                    Indented = true,
+                    Encoder = JavaScriptEncoder.UnsafeRelaxedJsonEscaping
+                }))
+                {
+                    writer.WriteStartObject();
+                    foreach (var pair in merged)
+                    {
+                        if (TryWriteRawJson(writer, pair.Key, pair.Value))
+                        {
+                            continue;
+                        }
+
+                        writer.WriteString(pair.Key, pair.Value ?? string.Empty);
+                    }
+
+                    writer.WriteEndObject();
+                }
+
+                InvalidateCache();
+                return true;
+            }
+            catch (Exception ex) when (
+                ex is IOException ||
+                ex is UnauthorizedAccessException ||
+                ex is ArgumentException)
+            {
+                return false;
+            }
+        }
+
+        /// <summary>
+        /// Writes a value verbatim when it is already valid JSON of a non-string kind
+        /// (array, object or number). Returns false when the value should be written
+        /// as an ordinary string, which is the case for every text setting.
+        /// </summary>
+        /// <remarks>
+        /// Only <c>{</c>, <c>[</c> and a leading digit/sign are considered. A plain
+        /// text setting such as a system prompt is left alone even if it happens to
+        /// contain JSON punctuation, because it will not *start* with a structural
+        /// character in any realistic case, and if it did the result is still a
+        /// readable file rather than a silent data corruption.
+        /// </remarks>
+        private static bool TryWriteRawJson(Utf8JsonWriter writer, string key, string value)
+        {
+            if (string.IsNullOrWhiteSpace(value))
+            {
+                return false;
+            }
+
+            var c = value.TrimStart()[0];
+            var looksStructural = c == '{' || c == '[' || c == '-' || char.IsDigit(c);
+            if (!looksStructural)
+            {
+                return false;
+            }
+
+            try
+            {
+                using var doc = JsonDocument.Parse(value);
+                // A quoted JSON string is still just a string; re-encode it normally
+                // so escaping stays consistent with the rest of the file.
+                if (doc.RootElement.ValueKind == JsonValueKind.String)
+                {
+                    return false;
+                }
+
+                writer.WritePropertyName(key);
+                doc.RootElement.WriteTo(writer);
+                return true;
+            }
+            catch (JsonException)
+            {
+                // Not JSON after all - treat as text.
+                return false;
+            }
+        }
+
+        /// <summary>Forces the next Read() to reload the settings file from disk.</summary>
+        public static void InvalidateCache()
+        {
+            _local = null;
+            _loaded = false;
+        }
+
         private static Dictionary<string, string> LoadLocalSettings()
         {
             var values = new Dictionary<string, string>(StringComparer.OrdinalIgnoreCase);
@@ -404,9 +601,7 @@ namespace AutoCAD.AITranslate
             if (string.IsNullOrWhiteSpace(path) || !File.Exists(path))
             {
                 return values;
-            }
-
-            try
+            }            try
             {
                 var json = File.ReadAllText(path);
                 if (string.IsNullOrWhiteSpace(json))
@@ -433,6 +628,12 @@ namespace AutoCAD.AITranslate
                     else if (property.Value.ValueKind == JsonValueKind.Number)
                     {
                         // Allows OPENAI_TIMEOUT_MS to be written as a bare number.
+                        values[property.Name] = property.Value.GetRawText();
+                    }
+                    else if (property.Value.ValueKind == JsonValueKind.Array)
+                    {
+                        // The preset list is stored as a JSON array, so it is not a
+                        // string. Keep the raw text so PresetStore can deserialize it.
                         values[property.Name] = property.Value.GetRawText();
                     }
                 }
