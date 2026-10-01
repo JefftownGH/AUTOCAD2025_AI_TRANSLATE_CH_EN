@@ -85,6 +85,13 @@ namespace AutoCAD.AITranslate
         private readonly int _timeoutMs;
 
         /// <summary>
+        /// The language this client translates into. Mutable so one client can serve a
+        /// whole run after the user picks a language in the review dialog, without
+        /// rebuilding the connection or re-probing the endpoint.
+        /// </summary>
+        private TargetLanguage _targetLanguage = TargetLanguages.ByCode(TargetLanguages.DefaultCode);
+
+        /// <summary>
         /// Which endpoint family Auto mode settled on. Seeded from the persisted
         /// probe cache at construction, because the instance is short-lived: the
         /// settings dialog builds a fresh client for every "test connection" click.
@@ -104,6 +111,21 @@ namespace AutoCAD.AITranslate
             string apiType,
             string systemPrompt,
             int? timeoutMs)
+            : this(apiKey, model, baseUrl, organization, project, apiType, systemPrompt, timeoutMs,
+                   TargetLanguages.ByCode(TargetLanguages.DefaultCode))
+        {
+        }
+
+        public OpenAiClient(
+            string apiKey,
+            string model,
+            string baseUrl,
+            string organization,
+            string project,
+            string apiType,
+            string systemPrompt,
+            int? timeoutMs,
+            TargetLanguage targetLanguage)
         {
             _apiKey = apiKey?.Trim();
             _model = string.IsNullOrWhiteSpace(model) ? "gpt-4.1" : model.Trim();
@@ -115,6 +137,7 @@ namespace AutoCAD.AITranslate
             _apiType = NormalizeApiType(apiType);
             _systemPrompt = string.IsNullOrWhiteSpace(systemPrompt) ? null : systemPrompt.Trim();
             _timeoutMs = timeoutMs.HasValue && timeoutMs.Value > 0 ? timeoutMs.Value : 60000;
+            _targetLanguage = targetLanguage ?? TargetLanguages.ByCode(TargetLanguages.DefaultCode);
 
             // Warm the probe cache from disk. Only meaningful in Auto mode; an
             // explicit apiType already answers the question.
@@ -125,6 +148,25 @@ namespace AutoCAD.AITranslate
                 {
                     _resolvedAutoType = remembered.Value;
                 }
+            }
+        }
+
+        /// <summary>The language this client translates into.</summary>
+        public TargetLanguage TargetLanguage => _targetLanguage;
+
+        /// <summary>
+        /// Switches the target language for subsequent calls on this instance.
+        /// </summary>
+        /// <remarks>
+        /// Reusing the instance matters: rebuilding a client would discard the resolved
+        /// endpoint and re-probe the gateway. The system prompt is recomputed here so the
+        /// language instruction always matches the current selection.
+        /// </remarks>
+        public void SetTargetLanguage(TargetLanguage language)
+        {
+            if (language != null)
+            {
+                _targetLanguage = language;
             }
         }
 
@@ -258,7 +300,7 @@ namespace AutoCAD.AITranslate
         /// </summary>
         private string[] TranslateManyInOneRequest(string[] inputs)
         {
-            var payload = BuildBatchPayload(inputs);
+            var payload = BuildBatchPayload(inputs, _targetLanguage);
 
             string raw;
             try
@@ -294,16 +336,28 @@ namespace AutoCAD.AITranslate
 
         public static string BuildBatchPayload(string[] inputs)
         {
+            return BuildBatchPayload(inputs, TargetLanguages.ByCode(TargetLanguages.DefaultCode));
+        }
+
+        /// <summary>
+        /// Builds the batched request. The target language is a parameter because the
+        /// prompt used to hardcode English, so asking for Korean silently produced
+        /// English -- a defect the caller could not detect from the response shape.
+        /// </summary>
+        public static string BuildBatchPayload(string[] inputs, TargetLanguage language)
+        {
+            var target = language ?? TargetLanguages.ByCode(TargetLanguages.DefaultCode);
+
             // Ask for a JSON array keyed by index. Index-keying removes any ordering
             // ambiguity should the model decide to reorder or drop an entry.
             var sb = new StringBuilder();
-            sb.Append("Translate each element of the following JSON array from Chinese to natural, professional English.\n");
+            sb.Append($"Translate each element of the following JSON array into {target.PromptName}.\n");
             sb.Append("Rules:\n");
             sb.Append("1. Keep the array length identical to the input.\n");
             sb.Append("2. Keep the same order; element i of the output must be the translation of element i of the input.\n");
             sb.Append("3. Preserve numbers, units, punctuation and line breaks exactly.\n");
             sb.Append("4. Preserve AutoCAD MText formatting codes such as \\\\P, \\\\L, \\\\l, \\\\O, \\\\o, \\\\S, \\\\A unchanged.\n");
-            sb.Append("5. Text that is already English, or that contains no Chinese, must be returned unchanged.\n");
+            sb.Append($"5. Text that is already in {target.PromptName}, or that contains nothing translatable, must be returned unchanged.\n");
             sb.Append("6. Reply with ONLY a JSON array of strings. No markdown fences, no commentary.\n\n");
             sb.Append("Input:\n");
             sb.Append(JsonSerializer.Serialize(inputs));
@@ -370,9 +424,15 @@ namespace AutoCAD.AITranslate
 
         private string SendResponses(string inputText, bool expectJsonArray)
         {
+            // The Responses payload has no system-role slot in this shape, so the
+            // language instruction has to travel inline with the user turn. Without
+            // this the endpoint would translate to whatever it guessed -- the previous
+            // build simply omitted any instruction here and relied on the prompt
+            // containing the word "English".
             var requestBody = new
             {
                 model = _model,
+                instructions = TargetLanguages.BuildSystemPrompt(_systemPrompt, _targetLanguage),
                 input = new[]
                 {
                     new
@@ -800,17 +860,13 @@ namespace AutoCAD.AITranslate
 
         private object[] BuildChatMessages(string inputText)
         {
-            if (string.IsNullOrWhiteSpace(_systemPrompt))
-            {
-                return new object[]
-                {
-                    new { role = "user", content = inputText }
-                };
-            }
+            // The language instruction is composed here rather than taken verbatim from
+            // the settings file, so the stored prompt cannot contradict the picker.
+            var systemPrompt = TargetLanguages.BuildSystemPrompt(_systemPrompt, _targetLanguage);
 
             return new object[]
             {
-                new { role = "system", content = _systemPrompt },
+                new { role = "system", content = systemPrompt },
                 new { role = "user", content = inputText }
             };
         }

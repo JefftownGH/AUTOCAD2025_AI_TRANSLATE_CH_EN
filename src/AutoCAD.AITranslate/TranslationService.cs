@@ -104,12 +104,31 @@ namespace AutoCAD.AITranslate
 
         public string BaseUrl => _client.BaseUrl;
 
+        /// <summary>The language this service translates into.</summary>
+        public TargetLanguage TargetLanguage => _client.TargetLanguage;
+
+        /// <summary>
+        /// Points this service at a different target language, reusing the same client so
+        /// the resolved endpoint and any warmed connection survive the change.
+        /// </summary>
+        public void SetTargetLanguage(TargetLanguage language)
+        {
+            _client.SetTargetLanguage(language);
+        }
+
+        /// <summary>
+        /// Clears both the in-memory memo and the on-disk translation memory. The disk
+        /// cache is the one that actually persists across sessions, so clearing only the
+        /// former would leave the user's next run silently reading the old answers.
+        /// </summary>
         public static void ClearCache()
         {
             lock (CacheLock)
             {
                 Cache.Clear();
             }
+
+            TranslationCache.Clear();
         }
 
         public static int CacheCount
@@ -122,6 +141,15 @@ namespace AutoCAD.AITranslate
                 }
             }
         }
+
+        /// <summary>Entries held in the persistent, cross-session translation memory.</summary>
+        public static int PersistentCacheCount => TranslationCache.Count;
+
+        /// <summary>Of those, how many were hand-corrected by a user.</summary>
+        public static int VerifiedCacheCount => TranslationCache.VerifiedCount;
+
+        /// <summary>Flushes the persistent cache. Safe to call at any time.</summary>
+        public static bool FlushCache() => TranslationCache.Flush();
 
         public static TranslationService CreateFromEnvironment()
         {
@@ -140,10 +168,18 @@ namespace AutoCAD.AITranslate
         }
 
         /// <summary>
-        /// Resolves translations for a list of distinct inputs, using the cache where
-        /// possible and de-duplicating identical strings so that a drawing with the same
-        /// label repeated 50 times costs exactly one API call.
+        /// Resolves translations for a list of distinct inputs, consulting the persistent
+        /// translation memory first and de-duplicating identical strings so that a drawing
+        /// with the same label repeated 50 times costs exactly one API call.
         /// </summary>
+        /// <remarks>
+        /// Two caches are consulted, in order of authority:
+        ///   1. the on-disk translation memory, keyed by (language, source) -- survives
+        ///      sessions and drawings, and holds hand-corrected entries that always win;
+        ///   2. the in-session memo, which is only a fast path to the same answer.
+        /// Anything still unresolved goes to the model, and whatever comes back is written
+        /// to both caches so the next run is cheaper.
+        /// </remarks>
         public Dictionary<string, TranslationOutcome> ResolveMany(
             IReadOnlyList<string> originals,
             int batchSize,
@@ -153,9 +189,10 @@ namespace AutoCAD.AITranslate
         {
             stats.SetRequested(originals.Count);
 
+            var language = _client.TargetLanguage ?? TargetLanguages.ByCode(TargetLanguages.DefaultCode);
+
             var unique = new List<string>();
             var seen = new HashSet<string>(StringComparer.Ordinal);
-            var cached = new Dictionary<string, string>(StringComparer.Ordinal);
 
             foreach (var original in originals)
             {
@@ -165,8 +202,20 @@ namespace AutoCAD.AITranslate
                 }
             }
 
+            var cached = new Dictionary<string, string>(StringComparer.Ordinal);
+
+            // The on-disk memory is authoritative. A user-corrected entry must be served
+            // ahead of anything the in-session memo happens to hold, otherwise a
+            // correction made in this run would be undone by a stale memo value.
             foreach (var text in unique)
             {
+                var persistent = TranslationCache.Lookup(language.Code, text);
+                if (persistent != null && !string.IsNullOrWhiteSpace(persistent.Target))
+                {
+                    cached[text] = persistent.Target;
+                    continue;
+                }
+
                 lock (CacheLock)
                 {
                     if (Cache.TryGetValue(text, out var hit))
@@ -221,7 +270,8 @@ namespace AutoCAD.AITranslate
                 });
             }
 
-            // Populate the cache with everything we learned this run.
+            // Populate both caches with everything we learned this run. Machine output is
+            // recorded as unverified, so it can never displace a hand-corrected entry.
             lock (CacheLock)
             {
                 if (Cache.Count > MaxCacheEntries)
@@ -234,6 +284,15 @@ namespace AutoCAD.AITranslate
                     Cache[pair.Key] = pair.Value;
                 }
             }
+
+            foreach (var pair in resolved)
+            {
+                TranslationCache.Remember(language.Code, pair.Key, pair.Value, verified: false);
+            }
+
+            // Count the cache reads for ranking; a term that keeps coming back should be
+            // the last thing evicted.
+            TranslationCache.Touch(language.Code, cached.Keys);
 
             var outcome = new Dictionary<string, TranslationOutcome>(StringComparer.Ordinal);
             foreach (var original in originals)
@@ -251,6 +310,38 @@ namespace AutoCAD.AITranslate
             }
 
             return outcome;
+        }
+
+        /// <summary>
+        /// Records the user's accepted or corrected translations into the persistent
+        /// memory, marking hand-edited rows as verified.
+        /// </summary>
+        /// <remarks>
+        /// Called after the review dialog is accepted and before anything is written to
+        /// the drawing. Doing it here means a correction is remembered even if the
+        /// subsequent write is rolled back -- the text the user typed is knowledge about
+        /// the term, independent of whether this particular drawing received it.
+        /// </remarks>
+        public static void CommitReviewed(
+            string languageCode,
+            IEnumerable<KeyValuePair<string, string>> accepted,
+            bool verified)
+        {
+            if (accepted == null)
+            {
+                return;
+            }
+
+            var language = TargetLanguages.ByCode(languageCode);
+            foreach (var pair in accepted)
+            {
+                if (string.IsNullOrWhiteSpace(pair.Key) || string.IsNullOrWhiteSpace(pair.Value))
+                {
+                    continue;
+                }
+
+                TranslationCache.Remember(language.Code, pair.Key, pair.Value, verified);
+            }
         }
 
         /// <summary>
@@ -379,7 +470,8 @@ namespace AutoCAD.AITranslate
             "OPENAI_SYSTEM_PROMPT",
             "OPENAI_TIMEOUT_MS",
             "OPENAI_ORG",
-            "OPENAI_PROJECT"
+            "OPENAI_PROJECT",
+            "OPENAI_TARGET_LANGUAGE"
         };
 
         public static string Read(string key)

@@ -3,13 +3,13 @@ using Autodesk.AutoCAD.DatabaseServices;
 
 namespace AutoCAD.AITranslate
 {
-    internal enum TextEntityType
+    public enum TextEntityType
     {
         DBText,
         MText
     }
 
-    internal enum TranslationMode
+    public enum TranslationMode
     {
         /// <summary>Overwrite the existing text in place.</summary>
         Replace,

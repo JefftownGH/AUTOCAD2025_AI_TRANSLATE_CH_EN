@@ -4,6 +4,7 @@
   "OPENAI_BASE_URL": "https://api.openai.com/v1",
   "OPENAI_API_TYPE": "auto",
   "OPENAI_SYSTEM_PROMPT": "",
+  "OPENAI_TARGET_LANGUAGE": "en",
   "OPENAI_TIMEOUT_MS": 60000,
   "OPENAI_ORG": "",
   "OPENAI_PROJECT": ""

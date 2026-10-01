@@ -70,14 +70,38 @@ namespace AutoCAD.AITranslate
             }
         }
 
-        /// <summary>Empties the in-memory translation cache.</summary>
+        /// <summary>
+        /// Empties both the in-session memo and the persistent translation memory.
+        /// </summary>
+        /// <remarks>
+        /// The persistent memory is the one that survives sessions, so a user asking to
+        /// clear the cache almost certainly means both. Clearing only the in-memory half
+        /// would leave the next run serving the answers they were trying to discard.
+        /// </remarks>
         internal static void ClearCache()
         {
             Diagnostics.Log("ClearCache invoked");
 
-            var before = TranslationService.CacheCount;
+            var sessionBefore = TranslationService.CacheCount;
+            var persistentBefore = TranslationService.PersistentCacheCount;
+            var verifiedBefore = TranslationService.VerifiedCacheCount;
+
             TranslationService.ClearCache();
-            GetEditor()?.WriteMessage($"\nTranslation cache cleared ({before} entries).");
+
+            GetEditor()?.WriteMessage(
+                $"\nTranslation cache cleared: {sessionBefore} in-session, " +
+                $"{persistentBefore} persistent ({verifiedBefore} of them hand-corrected).");
+        }
+
+        /// <summary>Writes the persistent translation memory to disk immediately.</summary>
+        internal static void SaveCache()
+        {
+            Diagnostics.Log("SaveCache invoked");
+
+            var wrote = TranslationService.FlushCache();
+            GetEditor()?.WriteMessage(wrote
+                ? $"\nTranslation memory saved ({TranslationService.PersistentCacheCount} entries) to:\n  {TranslationCache.CacheFilePath}"
+                : "\nTranslation memory had no changes to save.");
         }
 
         /// <summary>Rolls back the most recent translation in the active drawing.</summary>
@@ -249,75 +273,117 @@ namespace AutoCAD.AITranslate
                 return;
             }
 
-            // ---------- Phase 2: interactive decisions, no transaction held ----------
-            var mode = PromptMode(editor);
-            if (mode == null)
-            {
-                editor.WriteMessage("\nTranslation cancelled.");
-                return;
-            }
+            // ---------- Phase 2: pick a language, translate, let the user review ----------
+            //
+            // No transaction is held from here on. The dialog can stay open for minutes
+            // while the user edits translations, and holding the document lock across that
+            // would freeze the drawing for the whole session.
+            var language = TargetLanguages.ByCode(Settings.Read("OPENAI_TARGET_LANGUAGE"));
+            service.SetTargetLanguage(language);
 
-            var options = PromptNetworkSettings(editor);
-            editor.WriteMessage($"\nFound {items.Count} item(s) containing Chinese text." +
-                                $"\nModel: {service.Model} | Batch: {options.BatchSize} | Parallel: {options.MaxParallel}");
+            var options = new NetworkSettings();
 
-            // ---------- Phase 2b: all network I/O, no transaction held ----------
-            var stats = new TranslationStats();
-            var progressReporter = new ProgressReporter(editor);
-            Dictionary<string, TranslationOutcome> resolved;
+            // Cache-only pass first: anything the translation memory already knows is
+            // served immediately, so the dialog can open without waiting on the network
+            // for text that has been translated before.
+            List<TranslationRow> rows;
             try
             {
-                resolved = service.ResolveMany(
-                    items.Select(i => i.OriginalText).Distinct(StringComparer.Ordinal).ToList(),
-                    options.BatchSize,
-                    options.MaxParallel,
-                    progressReporter.Report,
-                    stats);
+                rows = BuildRows(service, items, language, options, editor, out var stats, showProgress: true);
             }
             catch (System.Exception ex)
             {
                 editor.WriteMessage($"\nTranslation failed: {Describe(ex)}");
                 return;
             }
-            finally
-            {
-                progressReporter.Finish();
-            }
 
-            var records = new List<TranslationRecord>();
-            foreach (var item in items)
+            var dialog = new TranslationReviewDialog(
+                rows, language, TranslationMode.NewLayer, items.Count, service.Model);
+
+            // Retranslation is triggered from inside the dialog, which means it happens
+            // while a modal window is up. It touches only the network and the row objects,
+            // never the document, so no lock is needed or wanted.
+            dialog.RetranslateRequested += (s, targets) =>
             {
-                if (!resolved.TryGetValue(item.OriginalText, out var outcome))
+                try
                 {
-                    continue;
+                    var pending = items
+                        .Where(i => targets.Any(t => t.OriginalId == i.OriginalId))
+                        .ToList();
+
+                    if (pending.Count == 0)
+                    {
+                        return;
+                    }
+
+                    service.SetTargetLanguage(dialog.SelectedLanguage);
+                    var refreshed = BuildRows(service, pending, dialog.SelectedLanguage, options, editor,
+                        out var retryStats, showProgress: false);
+
+                    // Merge the new proposals back by object id, leaving rows the user
+                    // edited alone -- an explicit correction must survive a retranslation.
+                    var byId = refreshed.ToDictionary(r => r.OriginalId);
+                    foreach (var row in targets)
+                    {
+                        if (!byId.TryGetValue(row.OriginalId, out var fresh) || row.IsEdited)
+                        {
+                            continue;
+                        }
+
+                        row.TranslatedText = fresh.TranslatedText;
+                        row.IsConfirmed = !row.IsEmpty;
+                    }
+
+                    editor.WriteMessage(
+                        $"\nRetranslated {refreshed.Count} item(s) to {dialog.SelectedLanguage.DisplayName}" +
+                        $" ({retryStats.RequestsSent} request(s) sent).");
                 }
+                catch (System.Exception ex)
+                {
+                    editor.WriteMessage($"\nRetranslation failed: {Describe(ex)}");
+                }
+            };
 
-                records.Add(new TranslationRecord(
-                    item.OriginalId, item.OwnerId, item.EntityType, item.OriginalText, outcome.Translated));
-            }
-
-            if (records.Count == 0)
-            {
-                editor.WriteMessage("\nNothing to apply: no text needed translation.");
-                ReportFailureSummary(editor, stats);
-                return;
-            }
-
-            PreviewSamples(editor, records);
-            ReportFailureSummary(editor, stats);
-
-            if (!ConfirmApply(editor))
+            AcApp.ShowModalWindow(dialog);
+            var outcome = dialog.Outcome;
+            if (outcome == null || !outcome.Accepted)
             {
                 editor.WriteMessage("\nTranslation cancelled.");
                 return;
             }
 
-            // When the user asked for a preview-only run, report and stop.
-            if (options.PreviewOnly)
+            // Remember the language for next time, so the picker opens on the same choice.
+            Settings.Write(new[]
             {
-                editor.WriteMessage("\nPreview only: no changes were written to the drawing.");
+                new KeyValuePair<string, string>("OPENAI_TARGET_LANGUAGE", outcome.Language.Code)
+            });
+
+            // Persist the user's decisions before touching the drawing: a correction is
+            // knowledge about the term, and should survive a later rollback of the
+            // drawing change itself.
+            var acceptedPairs = outcome.ConfirmedRows
+                .Select(r => new KeyValuePair<string, string>(r.OriginalText, r.TranslatedText))
+                .ToList();
+            TranslationService.CommitReviewed(outcome.Language.Code, acceptedPairs, verified: false);
+
+            var editedPairs = outcome.EditedRows
+                .Select(r => new KeyValuePair<string, string>(r.OriginalText, r.TranslatedText))
+                .ToList();
+            if (editedPairs.Count > 0)
+            {
+                TranslationService.CommitReviewed(outcome.Language.Code, editedPairs, verified: true);
+            }
+
+            TranslationCache.Flush();
+
+            var records = outcome.ConfirmedRows.Select(r => r.ToRecord()).ToList();
+            if (records.Count == 0)
+            {
+                editor.WriteMessage("\nNothing selected: no changes were written to the drawing.");
                 return;
             }
+
+            var mode = outcome.Mode;
 
             // ---------- Phase 3: short write transaction ----------
             var applied = 0;
@@ -369,16 +435,90 @@ namespace AutoCAD.AITranslate
                 return;
             }
 
-            editor.WriteMessage($"\nTranslation completed: {applied} item(s) applied" +
+            editor.WriteMessage($"\nTranslation completed: {applied} item(s) applied to " +
+                                $"{outcome.Language.DisplayName}" +
                                 (blockDefinitionFallbacks > 0
                                     ? $" ({blockDefinitionFallbacks} inside block definitions were replaced in place; use NewLayer mode on exploded text to keep originals)"
                                     : string.Empty) +
                                 ".");
-            editor.WriteMessage($"\n  Unique strings: {stats.Requested} | API requests: {stats.RequestsSent} | Cache hits: {stats.CacheHits}");
+            editor.WriteMessage($"\n  Edited by hand: {outcome.EditedRows.Count}" +
+                                $" | Translation memory: {TranslationCache.Count} entries" +
+                                $" ({TranslationCache.VerifiedCount} verified)");
             editor.WriteMessage("\n  Use the Ribbon \"回滚翻译\" button (or AI_TRANSLATE_ROLLBACK) to undo.");
 
             // ---------- Phase 4: optional export, outside the transaction ----------
             CsvExporter.TryExport(editor, records);
+        }
+
+        /// <summary>
+        /// Translates a set of scanned items and turns them into reviewable rows.
+        /// </summary>
+        /// <remarks>
+        /// Reads the persistent translation memory before issuing any request, so a second
+        /// run over the same drawing costs nothing and a term corrected once is reused
+        /// everywhere.
+        /// </remarks>
+        private static List<TranslationRow> BuildRows(
+            TranslationService service,
+            List<TextItem> items,
+            TargetLanguage language,
+            NetworkSettings options,
+            Editor editor,
+            out TranslationStats stats,
+            bool showProgress)
+        {
+            stats = new TranslationStats();
+
+            ProgressReporter progressReporter = null;
+            if (showProgress)
+            {
+                progressReporter = new ProgressReporter(editor);
+            }
+
+            // A method group cannot be null-conditional, so the delegate is built only
+            // when a reporter exists. Passing null leaves the callback unset, which
+            // ResolveMany already tolerates.
+            Action<int, int> onProgress = progressReporter == null
+                ? (Action<int, int>)null
+                : progressReporter.Report;
+
+            Dictionary<string, TranslationOutcome> resolved;
+            try
+            {
+                resolved = service.ResolveMany(
+                    items.Select(i => i.OriginalText).Distinct(StringComparer.Ordinal).ToList(),
+                    options.BatchSize,
+                    options.MaxParallel,
+                    onProgress,
+                    stats);
+            }
+            finally
+            {
+                progressReporter?.Finish();
+            }
+
+            var rows = new List<TranslationRow>();
+            foreach (var item in items)
+            {
+                if (!resolved.TryGetValue(item.OriginalText, out var outcome))
+                {
+                    continue;
+                }
+
+                var remembered = TranslationCache.Lookup(language.Code, item.OriginalText);
+
+                rows.Add(new TranslationRow(
+                    item.OriginalId,
+                    item.OwnerId,
+                    item.EntityType,
+                    item.OriginalText,
+                    outcome.Translated,
+                    item.IsInsideBlockDefinition,
+                    outcome.FromCache,
+                    remembered != null && remembered.Verified));
+            }
+
+            return rows;
         }
 
         // ------------------------------------------------------------------
@@ -589,83 +729,17 @@ namespace AutoCAD.AITranslate
         }
 
         // ------------------------------------------------------------------
-        // Prompts
+        // Networking options
         // ------------------------------------------------------------------
 
-        private static TranslationMode? PromptMode(Editor editor)
-        {
-            var options = new PromptKeywordOptions(
-                "\nTranslation mode [Replace in place / New layer keeps originals]")
-            {
-                AllowNone = false
-            };
-            options.Keywords.Add("Replace");
-            options.Keywords.Add("NewLayer");
-            options.Keywords.Default = "NewLayer";
-
-            var result = editor.GetKeywords(options);
-            if (result.Status != PromptStatus.OK)
-            {
-                return null;
-            }
-
-            return string.Equals(result.StringResult, "Replace", StringComparison.OrdinalIgnoreCase)
-                ? TranslationMode.Replace
-                : TranslationMode.NewLayer;
-        }
-
+        /// <summary>
+        /// Batching knobs. The write mode and the target language now come from the
+        /// review dialog, so only the throughput settings remain as defaults.
+        /// </summary>
         private sealed class NetworkSettings
         {
             public int BatchSize { get; set; } = DefaultBatchSize;
             public int MaxParallel { get; set; } = DefaultMaxParallel;
-            public bool PreviewOnly { get; set; }
-        }
-
-        private static NetworkSettings PromptNetworkSettings(Editor editor)
-        {
-            var settings = new NetworkSettings();
-
-            var batchOptions = new PromptIntegerOptions(
-                $"\nItems per API request (1 = one call per item) <{DefaultBatchSize}>")
-            {
-                AllowNone = true,
-                AllowZero = false,
-                LowerLimit = 1,
-                UpperLimit = 200
-            };
-            var batchResult = editor.GetInteger(batchOptions);
-            if (batchResult.Status == PromptStatus.OK && batchResult.Value > 0)
-            {
-                settings.BatchSize = batchResult.Value;
-            }
-
-            var parallelOptions = new PromptIntegerOptions(
-                $"\nConcurrent requests <{DefaultMaxParallel}>")
-            {
-                AllowNone = true,
-                AllowZero = false,
-                LowerLimit = 1,
-                UpperLimit = 16
-            };
-            var parallelResult = editor.GetInteger(parallelOptions);
-            if (parallelResult.Status == PromptStatus.OK && parallelResult.Value > 0)
-            {
-                settings.MaxParallel = parallelResult.Value;
-            }
-
-            var previewOptions = new PromptKeywordOptions("\nWrite changes to the drawing? [Yes/PreviewOnly]")
-            {
-                AllowNone = false
-            };
-            previewOptions.Keywords.Add("Yes");
-            previewOptions.Keywords.Add("PreviewOnly");
-            previewOptions.Keywords.Default = "Yes";
-
-            var previewResult = editor.GetKeywords(previewOptions);
-            settings.PreviewOnly = previewResult.Status == PromptStatus.OK &&
-                                   string.Equals(previewResult.StringResult, "PreviewOnly", StringComparison.OrdinalIgnoreCase);
-
-            return settings;
         }
 
         // ------------------------------------------------------------------
@@ -739,50 +813,6 @@ namespace AutoCAD.AITranslate
             tr.AddNewlyCreatedDBObject(clone, true);
             record.SetNewEntityId(newId);
             return true;
-        }
-
-        // ------------------------------------------------------------------
-        // Reporting helpers
-        // ------------------------------------------------------------------
-
-        private static void PreviewSamples(Editor editor, List<TranslationRecord> records)
-        {
-            editor.WriteMessage($"\n{records.Count} item(s) ready to translate. Sample:");
-            var sample = records.Take(5).ToList();
-            for (var i = 0; i < sample.Count; i++)
-            {
-                editor.WriteMessage($"\n  [{i + 1}] {sample[i].OriginalText}" +
-                                    $"\n   -> {sample[i].TranslatedText}");
-            }
-        }
-
-        private static void ReportFailureSummary(Editor editor, TranslationStats stats)
-        {
-            if (stats.Failed == 0)
-            {
-                return;
-            }
-
-            editor.WriteMessage($"\nWarning: {stats.Failed} item(s) could not be translated.");
-            foreach (var error in stats.Errors.Take(3))
-            {
-                editor.WriteMessage($"\n  - {OpenAiClient.Truncate(error, 300)}");
-            }
-        }
-
-        private static bool ConfirmApply(Editor editor)
-        {
-            var options = new PromptKeywordOptions("\nApply translation? [Yes/No]")
-            {
-                AllowNone = false
-            };
-            options.Keywords.Add("Yes");
-            options.Keywords.Add("No");
-            options.Keywords.Default = "No";
-
-            var result = editor.GetKeywords(options);
-            return result.Status == PromptStatus.OK &&
-                   string.Equals(result.StringResult, "Yes", StringComparison.OrdinalIgnoreCase);
         }
 
         /// <summary>

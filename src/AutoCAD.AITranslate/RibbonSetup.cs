@@ -107,10 +107,10 @@ namespace AutoCAD.AITranslate
 
             var translatePanel = new RibbonPanelSource { Title = "翻译" };
             translatePanel.Items.Add(CreateButton(
-                "翻译全图", "AITRANSLATE_ALL", "翻译整个图纸（模型空间 + 图纸空间）中的中文文本",
+                "翻译全图", "AITRANSLATE_ALL", "翻译整个图纸（模型空间 + 图纸空间）中的中文文本，可选目标语言并逐条校对",
                 TranslationCommands.TranslateAll));
             translatePanel.Items.Add(CreateButton(
-                "翻译选区", "AITRANSLATE_SEL", "只翻译选中的文本对象",
+                "翻译选区", "AITRANSLATE_SEL", "只翻译选中的文本对象，可选目标语言并逐条校对",
                 TranslationCommands.TranslateSelection));
             translatePanel.Items.Add(CreateButton(
                 "回滚翻译", "AITRANSLATE_ROLLBACK", "撤销当前图纸最近一次翻译",
@@ -122,13 +122,16 @@ namespace AutoCAD.AITranslate
                 "模型设置", "AITRANSLATE_SETTINGS", "配置大模型 API Key、接口地址、模型等参数",
                 TranslationCommands.OpenSettings));
             configPanel.Items.Add(CreateButton(
-                "清空缓存", "AITRANSLATE_CLEAR_CACHE", "清空内存中的翻译缓存",
+                "保存译文库", "AITRANSLATE_SAVE_CACHE", "把翻译记忆立即写入磁盘（默认在每次翻译后自动保存）",
+                TranslationCommands.SaveCache));
+            configPanel.Items.Add(CreateButton(
+                "清空缓存", "AITRANSLATE_CLEAR_CACHE", "清空内存缓存与译文记忆库",
                 TranslationCommands.ClearCache));
             tab.Panels.Add(new RibbonPanel { Source = configPanel });
 
             ribbon.Tabs.Add(tab);
 
-            Diagnostics.Log($"ribbon tab built OK, v{version}, buttons=5 (direct in-process calls)");
+            Diagnostics.Log($"ribbon tab built OK, v{version}, buttons=6 (direct in-process calls)");
             GetEditor()?.WriteMessage(
                 $"\n[AI 翻译] Ribbon 选项卡已创建 (v{version})。按钮为直接调用，无需命令上下文。");
         }

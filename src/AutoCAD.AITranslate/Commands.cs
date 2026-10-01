@@ -38,8 +38,9 @@ namespace AutoCAD.AITranslate
             editor?.WriteMessage(
                 $"\nAutoCAD AI Translate v{version} loaded. Model target: {DetectAutoCadVersion()}." +
                 "\nRibbon: \"AI 翻译\" tab." +
+                "\nTarget language is chosen in the preview dialog that appears on every run." +
                 "\nCommands: AI_TRANSLATE_ZH2EN, AI_TRANSLATE_ZH2EN_SEL, AI_TRANSLATE_ROLLBACK, " +
-                "AI_TRANSLATE_SETTINGS, AI_TRANSLATE_CLEAR_CACHE.");
+                "AI_TRANSLATE_SETTINGS, AI_TRANSLATE_CLEAR_CACHE, AI_TRANSLATE_SAVE_CACHE.");
         }
 
         public void Terminate()
@@ -84,12 +85,20 @@ namespace AutoCAD.AITranslate
             TranslationCommands.OpenSettings();
         }
 
-        /// <summary>Empties the in-memory translation cache.</summary>
+        /// <summary>Empties both the in-session and persistent translation caches.</summary>
         [CommandMethod("AI_TRANSLATE_CLEAR_CACHE", CommandFlags.Modal)]
         public void ClearTranslationCache()
         {
             Diagnostics.Log("command AI_TRANSLATE_CLEAR_CACHE executed");
             TranslationCommands.ClearCache();
+        }
+
+        /// <summary>Flushes the persistent translation memory to disk.</summary>
+        [CommandMethod("AI_TRANSLATE_SAVE_CACHE", CommandFlags.Modal)]
+        public void SaveTranslationCache()
+        {
+            Diagnostics.Log("command AI_TRANSLATE_SAVE_CACHE executed");
+            TranslationCommands.SaveCache();
         }
 
         // ------------------------------------------------------------------
