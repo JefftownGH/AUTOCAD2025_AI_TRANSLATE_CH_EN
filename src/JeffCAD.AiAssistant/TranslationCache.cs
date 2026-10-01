@@ -7,7 +7,7 @@ using System.Text.Encodings.Web;
 using System.Text.Json;
 using System.Text.Json.Serialization;
 
-namespace AutoCAD.AITranslate
+namespace JeffCAD.AiAssistant
 {
     /// <summary>One remembered translation.</summary>
     internal sealed class CacheEntry
@@ -50,7 +50,7 @@ namespace AutoCAD.AITranslate
     /// User-level translation memory that survives across sessions and drawings.
     /// </summary>
     /// <remarks>
-    /// Stored at <c>%LOCALAPPDATA%\AutoCAD.AITranslate\translation-cache.json</c> rather
+    /// Stored at <c>%LOCALAPPDATA%\JeffCAD.AiAssistant\translation-cache.json</c> rather
     /// than next to the assembly: the plugin directory is often read-only, and the whole
     /// point of this cache is that a term translated once in one drawing is reused in the
     /// next.
@@ -102,7 +102,7 @@ namespace AutoCAD.AITranslate
                     root = Path.GetTempPath();
                 }
 
-                return Path.Combine(root, "AutoCAD.AITranslate", "translation-cache.json");
+                return Path.Combine(root, "JeffCAD.AiAssistant", "translation-cache.json");
             }
         }
 
@@ -171,7 +171,7 @@ namespace AutoCAD.AITranslate
             }
             catch (Exception ex)
             {
-                Diagnostics.Log($"translation cache: unreadable, starting empty ({ex.GetType().Name}: {ex.Message})");
+                AppSettings.Diagnostics.Log($"translation cache: unreadable, starting empty ({ex.GetType().Name}: {ex.Message})");
                 return new Dictionary<string, CacheEntry>(StringComparer.Ordinal);
             }
 
@@ -347,7 +347,7 @@ namespace AutoCAD.AITranslate
             }
             catch (Exception ex)
             {
-                Diagnostics.Log($"translation cache: clear failed ({ex.GetType().Name}: {ex.Message})");
+                AppSettings.Diagnostics.Log($"translation cache: clear failed ({ex.GetType().Name}: {ex.Message})");
             }
         }
 
@@ -412,7 +412,7 @@ namespace AutoCAD.AITranslate
             }
             catch (Exception ex)
             {
-                Diagnostics.Log($"translation cache: flush failed ({ex.GetType().Name}: {ex.Message})");
+                AppSettings.Diagnostics.Log($"translation cache: flush failed ({ex.GetType().Name}: {ex.Message})");
                 return false;
             }
         }

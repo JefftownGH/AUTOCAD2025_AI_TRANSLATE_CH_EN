@@ -1,6 +1,6 @@
 using System.Text.RegularExpressions;
 
-namespace AutoCAD.AITranslate
+namespace JeffCAD.AiAssistant
 {
     internal static class RegexUtils
     {

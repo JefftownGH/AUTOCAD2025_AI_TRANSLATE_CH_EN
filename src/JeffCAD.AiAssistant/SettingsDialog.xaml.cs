@@ -5,8 +5,9 @@ using System.Threading.Tasks;
 using System.Windows;
 using System.Windows.Controls;
 using System.Windows.Media;
+using LlmToolkit;
 
-namespace AutoCAD.AITranslate
+namespace JeffCAD.AiAssistant
 {
     /// <summary>
     /// One row in the provider list. Wraps a <see cref="ModelPreset"/> and adds the
@@ -117,14 +118,14 @@ namespace AutoCAD.AITranslate
         /// <summary>Keys overridden by environment variables; the file cannot win for these.</summary>
         private static readonly string[] EnvOverriddenKeys =
         {
-            "OPENAI_API_KEY",
-            "OPENAI_MODEL",
-            "OPENAI_BASE_URL",
-            "OPENAI_API_TYPE",
-            "OPENAI_SYSTEM_PROMPT",
-            "OPENAI_TIMEOUT_MS",
-            "OPENAI_ORG",
-            "OPENAI_PROJECT"
+            LlmSettingKeys.ApiKey,
+            LlmSettingKeys.Model,
+            LlmSettingKeys.BaseUrl,
+            LlmSettingKeys.ApiType,
+            LlmSettingKeys.SystemPrompt,
+            LlmSettingKeys.TimeoutMs,
+            LlmSettingKeys.Organization,
+            LlmSettingKeys.Project
         };
 
         /// <summary>Name carried by the trailing draft row that creates a new provider.</summary>
@@ -149,7 +150,7 @@ namespace AutoCAD.AITranslate
         /// and forced a fresh /responses probe each time. Invalidated whenever the
         /// connection parameters change.
         /// </summary>
-        private OpenAiClient _testClient;
+        private ChatClient _testClient;
 
         /// <summary>Signature of the parameters <see cref="_testClient"/> was built from.</summary>
         private string _testClientSignature;
@@ -158,10 +159,10 @@ namespace AutoCAD.AITranslate
         {
             InitializeComponent();
 
-            _presets = PresetStore.Load();
+            _presets = AppSettings.PresetStore.Load();
             LoadFromSettings();
 
-            RebuildProviderList(selectName: Settings.Read(PresetStore.ActivePresetKey));
+            RebuildProviderList(selectName: AppSettings.Store.Read(LlmSettingKeys.ActivePreset));
             RefreshPresetButtons();
 
             EnvWarningText.Text = DescribeEnvOverrides();
@@ -176,16 +177,16 @@ namespace AutoCAD.AITranslate
 
         private void LoadFromSettings()
         {
-            ApiKeyBox.Password = Settings.Read("OPENAI_API_KEY") ?? string.Empty;
+            ApiKeyBox.Password = AppSettings.Store.Read(LlmSettingKeys.ApiKey) ?? string.Empty;
             ApiKeyPlain.Text = ApiKeyBox.Password;
-            ModelBox.Text = Settings.Read("OPENAI_MODEL") ?? "gpt-4.1";
-            BaseUrlBox.Text = Settings.Read("OPENAI_BASE_URL") ?? "https://api.openai.com/v1";
-            TimeoutBox.Text = (Settings.ReadInt("OPENAI_TIMEOUT_MS") ?? 60000).ToString();
-            OrgBox.Text = Settings.Read("OPENAI_ORG") ?? string.Empty;
-            ProjectBox.Text = Settings.Read("OPENAI_PROJECT") ?? string.Empty;
-            SystemPromptBox.Text = Settings.Read("OPENAI_SYSTEM_PROMPT") ?? string.Empty;
+            ModelBox.Text = AppSettings.Store.Read(LlmSettingKeys.Model) ?? LlmOptions.DefaultModel;
+            BaseUrlBox.Text = AppSettings.Store.Read(LlmSettingKeys.BaseUrl) ?? LlmOptions.DefaultBaseUrl;
+            TimeoutBox.Text = (AppSettings.Store.ReadInt(LlmSettingKeys.TimeoutMs) ?? 60000).ToString();
+            OrgBox.Text = AppSettings.Store.Read(LlmSettingKeys.Organization) ?? string.Empty;
+            ProjectBox.Text = AppSettings.Store.Read(LlmSettingKeys.Project) ?? string.Empty;
+            SystemPromptBox.Text = AppSettings.Store.Read(LlmSettingKeys.SystemPrompt) ?? string.Empty;
 
-            SelectApiType(Settings.Read("OPENAI_API_TYPE"));
+            SelectApiType(AppSettings.Store.Read(LlmSettingKeys.ApiType));
 
             // Offer every distinct model / base URL from the preset list as a
             // type-ahead suggestion. The plugin no longer ships a fixed list, so
@@ -210,14 +211,14 @@ namespace AutoCAD.AITranslate
             var timeout = ParseTimeout();
             return new Dictionary<string, string>(StringComparer.OrdinalIgnoreCase)
             {
-                ["OPENAI_API_KEY"] = ApiKeyBox.Password.Trim(),
-                ["OPENAI_MODEL"] = (ModelBox.Text ?? string.Empty).Trim(),
-                ["OPENAI_BASE_URL"] = (BaseUrlBox.Text ?? string.Empty).Trim(),
-                ["OPENAI_API_TYPE"] = SelectedApiType(),
-                ["OPENAI_SYSTEM_PROMPT"] = SystemPromptBox.Text.Trim(),
-                ["OPENAI_TIMEOUT_MS"] = timeout > 0 ? timeout.ToString() : string.Empty,
-                ["OPENAI_ORG"] = OrgBox.Text.Trim(),
-                ["OPENAI_PROJECT"] = ProjectBox.Text.Trim()
+                [LlmSettingKeys.ApiKey] = ApiKeyBox.Password.Trim(),
+                [LlmSettingKeys.Model] = (ModelBox.Text ?? string.Empty).Trim(),
+                [LlmSettingKeys.BaseUrl] = (BaseUrlBox.Text ?? string.Empty).Trim(),
+                [LlmSettingKeys.ApiType] = SelectedApiType(),
+                [LlmSettingKeys.SystemPrompt] = SystemPromptBox.Text.Trim(),
+                [LlmSettingKeys.TimeoutMs] = timeout > 0 ? timeout.ToString() : string.Empty,
+                [LlmSettingKeys.Organization] = OrgBox.Text.Trim(),
+                [LlmSettingKeys.Project] = ProjectBox.Text.Trim()
             };
         }
 
@@ -286,7 +287,7 @@ namespace AutoCAD.AITranslate
 
         private void SelectApiType(string apiType)
         {
-            switch (OpenAiClient.NormalizeApiType(apiType))
+            switch (ChatClient.NormalizeApiType(apiType))
             {
                 case ApiType.Responses:
                     ApiTypeBox.SelectedIndex = 1;
@@ -352,7 +353,7 @@ namespace AutoCAD.AITranslate
                 PresetList.ItemsSource = null;
                 PresetList.ItemsSource = rows;
 
-                var match = PresetStore.FindByName(_presets, selectName);
+                var match = ModelPresetStore.FindByName(_presets, selectName);
                 var target = match != null
                     ? rows.FirstOrDefault(r => ReferenceEquals(r.Preset, match))
                     : null;
@@ -479,9 +480,9 @@ namespace AutoCAD.AITranslate
 
         private void ReloadButton_Click(object sender, RoutedEventArgs e)
         {
-            _presets = PresetStore.Load();
+            _presets = AppSettings.PresetStore.Load();
             LoadFromSettings();
-            RebuildProviderList(selectName: Settings.Read(PresetStore.ActivePresetKey));
+            RebuildProviderList(selectName: AppSettings.Store.Read(LlmSettingKeys.ActivePreset));
             RefreshPresetButtons();
             StatusText.Text = "✓ 已重新载入方案列表，未保存的修改已丢弃。";
         }
@@ -533,7 +534,7 @@ namespace AutoCAD.AITranslate
                 return;
             }
 
-            var clash = PresetStore.FindByName(_presets, name);
+            var clash = ModelPresetStore.FindByName(_presets, name);
             if (clash != null && !ReferenceEquals(clash, selected))
             {
                 StatusText.Text = $"✗ 已存在名为「{name}」的供应商，请换一个名称。";
@@ -550,7 +551,7 @@ namespace AutoCAD.AITranslate
                 fork.BuiltIn = false;
                 _presets.Add(fork);
 
-                if (!PresetStore.Save(_presets, name))
+                if (!AppSettings.PresetStore.Save(_presets, name))
                 {
                     _presets.Remove(fork);
                     StatusText.Text = "✗ 保存失败，重命名未生效。";
@@ -566,7 +567,7 @@ namespace AutoCAD.AITranslate
             var previousName = selected.Name;
             selected.Name = name;
 
-            if (!PresetStore.Save(_presets, name))
+            if (!AppSettings.PresetStore.Save(_presets, name))
             {
                 selected.Name = previousName;
                 StatusText.Text = "✗ 保存失败，重命名未生效。";
@@ -614,7 +615,7 @@ namespace AutoCAD.AITranslate
                 ? _presets[Math.Min(index, _presets.Count - 1)].Name
                 : null;
 
-            if (!PresetStore.Save(_presets, nextName))
+            if (!AppSettings.PresetStore.Save(_presets, nextName))
             {
                 _presets.Insert(Math.Min(index, _presets.Count), selected);
                 StatusText.Text = "✗ 删除失败：无法写入配置文件。";
@@ -654,13 +655,13 @@ namespace AutoCAD.AITranslate
         private async void TestButton_Click(object sender, RoutedEventArgs e)
         {
             var values = CollectValues();
-            if (string.IsNullOrWhiteSpace(values["OPENAI_API_KEY"]))
+            if (string.IsNullOrWhiteSpace(values[LlmSettingKeys.ApiKey]))
             {
                 StatusText.Text = "✗ 请先填写 API Key。";
                 return;
             }
 
-            if (string.IsNullOrWhiteSpace(values["OPENAI_BASE_URL"]))
+            if (string.IsNullOrWhiteSpace(values[LlmSettingKeys.BaseUrl]))
             {
                 StatusText.Text = "✗ 请先填写接口地址。";
                 return;
@@ -674,8 +675,8 @@ namespace AutoCAD.AITranslate
 
             try
             {
-                var reply = await Task.Run(() => client.TranslateSingle("你好，世界。"));
-                StatusText.Text = $"✓ 连接成功。模型回复：{OpenAiClient.Truncate(reply, 120)}";
+                var reply = await Task.Run(() => client.Send("你好，世界。请回复“连接正常”。"));
+                StatusText.Text = $"✓ 连接成功。模型回复：{ChatClient.Truncate(reply, 120)}";
             }
             catch (Exception ex)
             {
@@ -683,7 +684,7 @@ namespace AutoCAD.AITranslate
                 // re-reads the (possibly corrected) settings and re-probes.
                 _testClient = null;
                 _testClientSignature = null;
-                StatusText.Text = $"✗ 连接失败：{OpenAiClient.Truncate(ex.Message, 260)}";
+                StatusText.Text = $"✗ 连接失败：{ChatClient.Truncate(ex.Message, 260)}";
             }
             finally
             {
@@ -697,17 +698,17 @@ namespace AutoCAD.AITranslate
         /// resolved endpoint in memory; rebuilding it on every click would re-probe
         /// the gateway each time.
         /// </summary>
-        private OpenAiClient GetOrCreateTestClient(Dictionary<string, string> values, int timeout)
+        private ChatClient GetOrCreateTestClient(Dictionary<string, string> values, int timeout)
         {
             var signature = string.Join("\u001f", new[]
             {
-                values["OPENAI_API_KEY"],
-                values["OPENAI_MODEL"],
-                values["OPENAI_BASE_URL"],
-                values["OPENAI_ORG"],
-                values["OPENAI_PROJECT"],
-                values["OPENAI_API_TYPE"],
-                values["OPENAI_SYSTEM_PROMPT"],
+                values[LlmSettingKeys.ApiKey],
+                values[LlmSettingKeys.Model],
+                values[LlmSettingKeys.BaseUrl],
+                values[LlmSettingKeys.Organization],
+                values[LlmSettingKeys.Project],
+                values[LlmSettingKeys.ApiType],
+                values[LlmSettingKeys.SystemPrompt],
                 timeout.ToString()
             });
 
@@ -717,15 +718,20 @@ namespace AutoCAD.AITranslate
                 return _testClient;
             }
 
-            _testClient = new OpenAiClient(
-                values["OPENAI_API_KEY"],
-                values["OPENAI_MODEL"],
-                values["OPENAI_BASE_URL"],
-                values["OPENAI_ORG"],
-                values["OPENAI_PROJECT"],
-                values["OPENAI_API_TYPE"],
-                values["OPENAI_SYSTEM_PROMPT"],
-                timeout);
+            _testClient = new ChatClient(
+                new LlmOptions
+                {
+                    ApiKey = values[LlmSettingKeys.ApiKey],
+                    Model = values[LlmSettingKeys.Model],
+                    BaseUrl = values[LlmSettingKeys.BaseUrl],
+                    Organization = values[LlmSettingKeys.Organization],
+                    Project = values[LlmSettingKeys.Project],
+                    ApiType = values[LlmSettingKeys.ApiType],
+                    SystemPrompt = values[LlmSettingKeys.SystemPrompt],
+                    TimeoutMs = timeout
+                },
+                new EndpointProbeStore(AppSettings.Store),
+                AppSettings.Diagnostics);
 
             _testClientSignature = signature;
             return _testClient;
@@ -735,7 +741,7 @@ namespace AutoCAD.AITranslate
         {
             var values = CollectValues();
 
-            if (string.IsNullOrWhiteSpace(values["OPENAI_API_KEY"]))
+            if (string.IsNullOrWhiteSpace(values[LlmSettingKeys.ApiKey]))
             {
                 var confirm = MessageBox.Show(
                     this,
@@ -749,7 +755,7 @@ namespace AutoCAD.AITranslate
                 }
             }
 
-            if (string.IsNullOrWhiteSpace(values["OPENAI_BASE_URL"]))
+            if (string.IsNullOrWhiteSpace(values[LlmSettingKeys.BaseUrl]))
             {
                 StatusText.Text = "✗ 接口地址不能为空。";
                 return;
@@ -762,18 +768,18 @@ namespace AutoCAD.AITranslate
             // dialog lands on the same list entry.
             var activeName = SelectedPreset != null && !string.IsNullOrWhiteSpace(SelectedPreset.Name)
                 ? SelectedPreset.Name
-                : Settings.Read(PresetStore.ActivePresetKey);
+                : AppSettings.Store.Read(LlmSettingKeys.ActivePreset);
 
             var merged = new List<KeyValuePair<string, string>>(values);
             if (!string.IsNullOrWhiteSpace(activeName))
             {
-                merged.Add(new KeyValuePair<string, string>(PresetStore.ActivePresetKey, activeName));
+                merged.Add(new KeyValuePair<string, string>(LlmSettingKeys.ActivePreset, activeName));
             }
 
-            if (!Settings.Write(merged))
+            if (!AppSettings.Store.Write(merged))
             {
                 StatusText.Text =
-                    $"✗ 保存失败：无法写入 {Settings.SettingsFilePath ?? "配置文件"}。" +
+                    $"✗ 保存失败：无法写入 {AppSettings.SettingsFilePath ?? "配置文件"}。" +
                     "请检查文件是否被其他程序占用，或以管理员身份运行 AutoCAD。";
                 return;
             }
@@ -803,7 +809,7 @@ namespace AutoCAD.AITranslate
             {
                 // Existing user provider: the form is the new definition of it.
                 UpdateSelectedPresetFromForm();
-                if (!PresetStore.Save(_presets, name))
+                if (!AppSettings.PresetStore.Save(_presets, name))
                 {
                     return $"✗ 供应商「{name}」写入失败，其余参数已保存。";
                 }
@@ -818,7 +824,7 @@ namespace AutoCAD.AITranslate
                 var fork = CurrentFormAsPreset(forkName);
                 _presets.Add(fork);
 
-                if (!PresetStore.Save(_presets, forkName))
+                if (!AppSettings.PresetStore.Save(_presets, forkName))
                 {
                     _presets.Remove(fork);
                     return "✗ 供应商写入失败，参数已保存为当前配置。";
@@ -854,13 +860,13 @@ namespace AutoCAD.AITranslate
             }
 
             chosen = chosen.Trim();
-            var error = PresetStore.Validate(chosen, BaseUrlBox.Text, ParseTimeout() > 0 ? ParseTimeout() : (int?)null);
+            var error = ModelPresetStore.Validate(chosen, BaseUrlBox.Text, ParseTimeout() > 0 ? ParseTimeout() : (int?)null);
             if (error != null)
             {
                 return "✗ " + error;
             }
 
-            if (PresetStore.FindByName(_presets, chosen) != null)
+            if (ModelPresetStore.FindByName(_presets, chosen) != null)
             {
                 return $"✗ 已存在名为「{chosen}」的供应商，请换一个名称。";
             }
@@ -868,10 +874,10 @@ namespace AutoCAD.AITranslate
             var preset = CurrentFormAsPreset(chosen);
             _presets.Add(preset);
 
-            if (!PresetStore.Save(_presets, chosen))
+            if (!AppSettings.PresetStore.Save(_presets, chosen))
             {
                 _presets.Remove(preset);
-                return $"✗ 保存失败：无法写入 {Settings.SettingsFilePath ?? "配置文件"}。";
+                return $"✗ 保存失败：无法写入 {AppSettings.SettingsFilePath ?? "配置文件"}。";
             }
 
             RebuildProviderList(selectName: chosen);
@@ -896,7 +902,7 @@ namespace AutoCAD.AITranslate
         private string MakeUniqueName(string baseName)
         {
             var name = string.IsNullOrWhiteSpace(baseName) ? "新供应商" : baseName.Trim();
-            if (PresetStore.FindByName(_presets, name) == null)
+            if (ModelPresetStore.FindByName(_presets, name) == null)
             {
                 return name;
             }
@@ -904,7 +910,7 @@ namespace AutoCAD.AITranslate
             for (var i = 2; i < 1000; i++)
             {
                 var candidate = $"{name} ({i})";
-                if (PresetStore.FindByName(_presets, candidate) == null)
+                if (ModelPresetStore.FindByName(_presets, candidate) == null)
                 {
                     return candidate;
                 }
@@ -925,7 +931,7 @@ namespace AutoCAD.AITranslate
 
         private void UpdateStatusHelp()
         {
-            var path = Settings.SettingsFilePath;
+            var path = AppSettings.SettingsFilePath;
             StatusText.Text = string.IsNullOrWhiteSpace(path)
                 ? "配置将保存到插件目录下的 AutoCAD.AITranslate.settings.json。"
                 : $"配置保存到：{path}";

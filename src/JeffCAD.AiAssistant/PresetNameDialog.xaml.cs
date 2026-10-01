@@ -1,6 +1,6 @@
 using System.Windows;
 
-namespace AutoCAD.AITranslate
+namespace JeffCAD.AiAssistant
 {
     /// <summary>
     /// A one-field prompt for naming a preset. WPF has no built-in input box, and

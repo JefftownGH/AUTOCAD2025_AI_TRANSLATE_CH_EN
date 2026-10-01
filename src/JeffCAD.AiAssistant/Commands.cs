@@ -8,9 +8,9 @@ using AcApp = Autodesk.AutoCAD.ApplicationServices.Application;
 // Registers the command class with AutoCAD. Without this, AutoCAD has to reflect over
 // every type in every loaded assembly to discover [CommandMethod] members; declaring it
 // here lets the command set be resolved directly at load time.
-[assembly: CommandClass(typeof(AutoCAD.AITranslate.Commands))]
+[assembly: CommandClass(typeof(JeffCAD.AiAssistant.Commands))]
 
-namespace AutoCAD.AITranslate
+namespace JeffCAD.AiAssistant
 {
     /// <summary>
     /// Command-line entry points and the assembly's extension-application hook.
@@ -30,15 +30,15 @@ namespace AutoCAD.AITranslate
         public void Initialize()
         {
             var version = typeof(Commands).Assembly.GetName().Version;
-            Diagnostics.Log($"plugin Initialize, v{version}");
+            AppSettings.Diagnostics.Log($"plugin Initialize, v{version}");
 
             RibbonSetup.Initialize();
 
             var editor = GetEditor();
             editor?.WriteMessage(
-                $"\nAutoCAD AI Translate v{version} loaded. Model target: {DetectAutoCadVersion()}." +
+                $"\nJeffCAD AI Assistant v{version} loaded. Model target: {DetectAutoCadVersion()}." +
                 "\nRibbon: \"AI 翻译\" tab." +
-                "\nTarget language is chosen in the preview dialog that appears on every run." +
+                "\nTarget language is chosen in the review dialog that appears on every run." +
                 "\nCommands: AI_TRANSLATE_ZH2EN, AI_TRANSLATE_ZH2EN_SEL, AI_TRANSLATE_ROLLBACK, " +
                 "AI_TRANSLATE_SETTINGS, AI_TRANSLATE_CLEAR_CACHE, AI_TRANSLATE_SAVE_CACHE.");
         }
@@ -57,7 +57,7 @@ namespace AutoCAD.AITranslate
         [CommandMethod("AI_TRANSLATE_ZH2EN", CommandFlags.Modal)]
         public void TranslateZhToEn()
         {
-            Diagnostics.Log("command AI_TRANSLATE_ZH2EN executed");
+            AppSettings.Diagnostics.Log("command AI_TRANSLATE_ZH2EN executed");
             TranslationCommands.TranslateAll();
         }
 
@@ -65,7 +65,7 @@ namespace AutoCAD.AITranslate
         [CommandMethod("AI_TRANSLATE_ZH2EN_SEL", CommandFlags.Modal)]
         public void TranslateZhToEnSelection()
         {
-            Diagnostics.Log("command AI_TRANSLATE_ZH2EN_SEL executed");
+            AppSettings.Diagnostics.Log("command AI_TRANSLATE_ZH2EN_SEL executed");
             TranslationCommands.TranslateSelection();
         }
 
@@ -73,7 +73,7 @@ namespace AutoCAD.AITranslate
         [CommandMethod("AI_TRANSLATE_ROLLBACK", CommandFlags.Modal)]
         public void RollbackLastTranslation()
         {
-            Diagnostics.Log("command AI_TRANSLATE_ROLLBACK executed");
+            AppSettings.Diagnostics.Log("command AI_TRANSLATE_ROLLBACK executed");
             TranslationCommands.Rollback();
         }
 
@@ -81,7 +81,7 @@ namespace AutoCAD.AITranslate
         [CommandMethod("AI_TRANSLATE_SETTINGS", CommandFlags.Modal)]
         public void OpenModelSettings()
         {
-            Diagnostics.Log("command AI_TRANSLATE_SETTINGS executed");
+            AppSettings.Diagnostics.Log("command AI_TRANSLATE_SETTINGS executed");
             TranslationCommands.OpenSettings();
         }
 
@@ -89,7 +89,7 @@ namespace AutoCAD.AITranslate
         [CommandMethod("AI_TRANSLATE_CLEAR_CACHE", CommandFlags.Modal)]
         public void ClearTranslationCache()
         {
-            Diagnostics.Log("command AI_TRANSLATE_CLEAR_CACHE executed");
+            AppSettings.Diagnostics.Log("command AI_TRANSLATE_CLEAR_CACHE executed");
             TranslationCommands.ClearCache();
         }
 
@@ -97,7 +97,7 @@ namespace AutoCAD.AITranslate
         [CommandMethod("AI_TRANSLATE_SAVE_CACHE", CommandFlags.Modal)]
         public void SaveTranslationCache()
         {
-            Diagnostics.Log("command AI_TRANSLATE_SAVE_CACHE executed");
+            AppSettings.Diagnostics.Log("command AI_TRANSLATE_SAVE_CACHE executed");
             TranslationCommands.SaveCache();
         }
 

@@ -5,7 +5,7 @@ using System.Linq;
 using System.Windows;
 using System.Windows.Controls;
 
-namespace AutoCAD.AITranslate
+namespace JeffCAD.AiAssistant
 {
     /// <summary>What the user decided in the review dialog.</summary>
     public sealed class ReviewOutcome

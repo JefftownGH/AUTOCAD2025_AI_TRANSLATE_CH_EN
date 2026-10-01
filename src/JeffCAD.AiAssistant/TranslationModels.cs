@@ -1,7 +1,7 @@
 using System.Collections.Generic;
 using Autodesk.AutoCAD.DatabaseServices;
 
-namespace AutoCAD.AITranslate
+namespace JeffCAD.AiAssistant
 {
     public enum TextEntityType
     {

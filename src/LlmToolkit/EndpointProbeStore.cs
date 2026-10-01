@@ -1,49 +1,62 @@
 using System;
 using System.Collections.Generic;
 using System.Text.Json;
-using System.Text.Json.Serialization;
 
-namespace AutoCAD.AITranslate
+namespace LlmToolkit
 {
     /// <summary>
     /// Remembers which API endpoint family a given gateway actually serves, so the
     /// "auto" probe only ever runs once per base URL instead of once per request.
     /// </summary>
     /// <remarks>
-    /// Why this exists: in auto mode the client tries <c>/responses</c> first and
-    /// falls back to <c>/chat/completions</c> on 404. Most Chinese gateways
-    /// (Zhipu/BigModel, DeepSeek, Moonshot, DashScope) implement only Chat
-    /// Completions, so that first attempt is guaranteed to fail. When the probe
-    /// result lived in an instance field it was useless in practice -- every
-    /// "test connection" click builds a fresh <see cref="OpenAiClient"/>, so the
-    /// cache was always cold and every click paid a doomed round trip. Worse, a
-    /// transient transport failure during that doomed request surfaced to the user
-    /// as "The SSL connection could not be established", which looks like a TLS
+    /// <para>
+    /// Why this exists: in auto mode the client tries <c>/responses</c> first and falls
+    /// back to <c>/chat/completions</c> on 404. Most Chinese gateways (Zhipu/BigModel,
+    /// DeepSeek, Moonshot, DashScope) implement only Chat Completions, so that first
+    /// attempt is guaranteed to fail. When the probe result lived in an instance field
+    /// it was useless in practice -- every "test connection" click builds a fresh
+    /// client, so the cache was always cold and every click paid a doomed round trip.
+    /// Worse, a transient transport failure during that doomed request surfaced to the
+    /// user as "The SSL connection could not be established", which looks like a TLS
     /// problem and is not.
-    ///
-    /// The cache is keyed by base URL only (case-insensitive, trailing slash
-    /// trimmed) and never by API key: two machines behind the same gateway
-    /// implement the same routes, and a key rotation should not force a re-probe.
-    /// A stale entry is self-correcting -- if the recorded endpoint starts 404ing,
-    /// the client clears the entry and probes again.
+    /// </para>
+    /// <para>
+    /// The cache is keyed by base URL only (case-insensitive, trailing slash trimmed)
+    /// and never by API key: two machines behind the same gateway implement the same
+    /// routes, and a key rotation should not force a re-probe. A stale entry is
+    /// self-correcting -- if the recorded endpoint starts 404ing, the client clears the
+    /// entry and probes again.
+    /// </para>
+    /// <para>
+    /// Unlike the original static implementation, this takes its
+    /// <see cref="LlmSettingsStore"/> by constructor so it can be pointed at a test
+    /// file and so two independent configurations do not share one cache.
+    /// </para>
     /// </remarks>
-    internal static class EndpointProbeStore
+    public sealed class EndpointProbeStore
     {
         /// <summary>Settings key holding the discovered endpoint map.</summary>
-        internal const string CacheKey = "RESOLVED_ENDPOINTS";
+        public const string CacheKey = "LLM_RESOLVED_ENDPOINTS";
 
         private static readonly JsonSerializerOptions Options = new JsonSerializerOptions
         {
             WriteIndented = false
         };
 
+        private readonly LlmSettingsStore _settings;
+
+        public EndpointProbeStore(LlmSettingsStore settings)
+        {
+            _settings = settings ?? throw new ArgumentNullException(nameof(settings));
+        }
+
         /// <summary>
         /// Returns the recorded endpoint for <paramref name="baseUrl"/>, or null when
-        /// nothing has been recorded yet. Never throws: a corrupt cache is treated as
-        /// an empty one, because failing to open a settings dialog over a cache entry
-        /// would be far worse than re-probing once.
+        /// nothing has been recorded yet. Never throws: a corrupt cache is treated as an
+        /// empty one, because failing to open a settings dialog over a cache entry would
+        /// be far worse than re-probing once.
         /// </summary>
-        internal static ApiType? Lookup(string baseUrl)
+        public ApiType? Lookup(string baseUrl)
         {
             var key = Normalize(baseUrl);
             if (key == null)
@@ -52,8 +65,7 @@ namespace AutoCAD.AITranslate
             }
 
             var entries = ReadAll();
-            if (!entries.TryGetValue(key, out var raw) ||
-                string.IsNullOrWhiteSpace(raw))
+            if (!entries.TryGetValue(key, out var raw) || string.IsNullOrWhiteSpace(raw))
             {
                 return null;
             }
@@ -72,14 +84,13 @@ namespace AutoCAD.AITranslate
 
         /// <summary>
         /// Records the endpoint family that worked for <paramref name="baseUrl"/>.
-        /// Writing through <see cref="Settings.Write"/> keeps this in the same file
-        /// as the rest of the configuration.
+        /// Writing through the settings store keeps this in the same file as the rest
+        /// of the configuration.
         /// </summary>
-        internal static bool Remember(string baseUrl, ApiType resolved)
+        public bool Remember(string baseUrl, ApiType resolved)
         {
             var key = Normalize(baseUrl);
-            if (key == null ||
-                (resolved != ApiType.Responses && resolved != ApiType.ChatCompletions))
+            if (key == null || (resolved != ApiType.Responses && resolved != ApiType.ChatCompletions))
             {
                 return false;
             }
@@ -96,25 +107,24 @@ namespace AutoCAD.AITranslate
             entries[key] = value;
 
             var json = JsonSerializer.Serialize(entries, Options);
-            var check = Settings.ReadRaw(CacheKey);
+            var check = _settings.ReadRaw(CacheKey);
             if (string.Equals(check, json, StringComparison.Ordinal))
             {
                 return true;
             }
 
-            return Settings.Write(new[]
+            return _settings.Write(new[]
             {
                 new KeyValuePair<string, string>(CacheKey, json)
             });
         }
 
         /// <summary>
-        /// Drops a recorded endpoint, forcing a fresh probe. Called when a recorded
-        /// value turns out to be wrong (the gateway changed, or a proxy rewrote the
-        /// response), so the stale entry self-heals instead of permanently breaking
-        /// the connection.
+        /// Drops a recorded endpoint, forcing a fresh probe. Called when a recorded value
+        /// turns out to be wrong (the gateway changed, or a proxy rewrote the response),
+        /// so the stale entry self-heals instead of permanently breaking the connection.
         /// </summary>
-        internal static bool Forget(string baseUrl)
+        public bool Forget(string baseUrl)
         {
             var key = Normalize(baseUrl);
             if (key == null)
@@ -130,20 +140,30 @@ namespace AutoCAD.AITranslate
 
             if (entries.Count == 0)
             {
-                // Nothing left: drop the key entirely rather than storing "{}".
-                return true;
+                // Nothing left. Storing "{}" would leave a meaningless key behind, so
+                // clear the entry instead -- and that means writing, not just returning.
+                //
+                // Returning true here without writing was a real bug: the in-memory
+                // dictionary was empty but the file still held the old JSON, so the very
+                // next read resurrected the entry Forget was supposed to have dropped.
+                // The self-healing path silently did nothing, which is the worst shape a
+                // fallback can take -- the gateway stays "remembered" as broken forever.
+                return _settings.Write(new[]
+                {
+                    new KeyValuePair<string, string>(CacheKey, string.Empty)
+                });
             }
 
             var json = JsonSerializer.Serialize(entries, Options);
-            return Settings.Write(new[]
+            return _settings.Write(new[]
             {
                 new KeyValuePair<string, string>(CacheKey, json)
             });
         }
 
-        private static Dictionary<string, string> ReadAll()
+        private Dictionary<string, string> ReadAll()
         {
-            var raw = Settings.ReadRaw(CacheKey);
+            var raw = _settings.ReadRaw(CacheKey);
             if (string.IsNullOrWhiteSpace(raw))
             {
                 return new Dictionary<string, string>(StringComparer.OrdinalIgnoreCase);
@@ -158,7 +178,6 @@ namespace AutoCAD.AITranslate
             }
             catch (JsonException)
             {
-                Diagnostics.Log($"probe cache: unparseable {CacheKey}, treating as empty");
                 return new Dictionary<string, string>(StringComparer.OrdinalIgnoreCase);
             }
         }

@@ -3,7 +3,7 @@ using System.Collections.Generic;
 using System.Runtime.CompilerServices;
 using Autodesk.AutoCAD.DatabaseServices;
 
-namespace AutoCAD.AITranslate
+namespace JeffCAD.AiAssistant
 {
     /// <summary>
     /// Keeps rollback state for the last translation performed in each open document.

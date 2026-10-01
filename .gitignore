@@ -5,6 +5,9 @@
 [Oo]bj/
 [Dd]ebug/
 [Rr]elease/
+# Staging area for a deploy: a copy of the build output, not a source of truth.
+dist/
+nupkg/
 x64/
 x86/
 [Aa][Rr][Mm]/
@@ -49,8 +52,10 @@ artifacts/
 # ---------------------------------------------------------------------------
 # Local configuration - NEVER commit API keys
 # ---------------------------------------------------------------------------
-# The runtime settings file holds OPENAI_API_KEY in plain text.
-# Commit AutoCAD.AITranslate.settings.json.example instead.
+# The runtime settings file holds LLM_API_KEY in plain text.
+# Commit JeffCAD.AiAssistant.settings.json.example instead.
+JeffCAD.AiAssistant.settings.json
+# Pre-rename name, still read as a fallback for existing installs.
 AutoCAD.AITranslate.settings.json
 *.settings.local.json
 .env

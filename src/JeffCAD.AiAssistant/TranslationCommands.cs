@@ -8,8 +8,9 @@ using AcApp = Autodesk.AutoCAD.ApplicationServices.Application;
 // Autodesk.AutoCAD.DatabaseServices also declares a public "Document" type, so the
 // unqualified name is ambiguous once both namespaces are imported. Alias the real one.
 using AcadDocument = Autodesk.AutoCAD.ApplicationServices.Document;
+using LlmToolkit;
 
-namespace AutoCAD.AITranslate
+namespace JeffCAD.AiAssistant
 {
     /// <summary>
     /// The real implementations behind both the command line and the Ribbon.
@@ -55,17 +56,17 @@ namespace AutoCAD.AITranslate
         /// <summary>Opens the model-configuration dialog.</summary>
         internal static void OpenSettings()
         {
-            Diagnostics.Log("OpenSettings invoked");
+            AppSettings.Diagnostics.Log("OpenSettings invoked");
 
             try
             {
                 var dialog = new SettingsDialog();
                 AcApp.ShowModalWindow(dialog);
-                Diagnostics.Log("settings dialog closed");
+                AppSettings.Diagnostics.Log("settings dialog closed");
             }
             catch (Exception ex)
             {
-                Diagnostics.Log($"settings dialog FAILED: {ex}");
+                AppSettings.Diagnostics.Log($"settings dialog FAILED: {ex}");
                 GetEditor()?.WriteMessage($"\n[AI 翻译] 打开设置窗口失败: {ex.Message}");
             }
         }
@@ -80,7 +81,7 @@ namespace AutoCAD.AITranslate
         /// </remarks>
         internal static void ClearCache()
         {
-            Diagnostics.Log("ClearCache invoked");
+            AppSettings.Diagnostics.Log("ClearCache invoked");
 
             var sessionBefore = TranslationService.CacheCount;
             var persistentBefore = TranslationService.PersistentCacheCount;
@@ -96,7 +97,7 @@ namespace AutoCAD.AITranslate
         /// <summary>Writes the persistent translation memory to disk immediately.</summary>
         internal static void SaveCache()
         {
-            Diagnostics.Log("SaveCache invoked");
+            AppSettings.Diagnostics.Log("SaveCache invoked");
 
             var wrote = TranslationService.FlushCache();
             GetEditor()?.WriteMessage(wrote
@@ -107,7 +108,7 @@ namespace AutoCAD.AITranslate
         /// <summary>Rolls back the most recent translation in the active drawing.</summary>
         internal static void Rollback()
         {
-            Diagnostics.Log("Rollback invoked");
+            AppSettings.Diagnostics.Log("Rollback invoked");
 
             var doc = AcApp.DocumentManager.MdiActiveDocument;
             if (doc == null)
@@ -212,7 +213,7 @@ namespace AutoCAD.AITranslate
         /// </remarks>
         private static void RunTranslation(bool selectionOnly)
         {
-            Diagnostics.Log($"RunTranslation(selectionOnly={selectionOnly}) invoked");
+            AppSettings.Diagnostics.Log($"RunTranslation(selectionOnly={selectionOnly}) invoked");
 
             var doc = AcApp.DocumentManager.MdiActiveDocument;
             if (doc == null)
@@ -228,8 +229,8 @@ namespace AutoCAD.AITranslate
                 editor.WriteMessage(
                     "\nOpenAI API key not configured." +
                     "\nOpen the model settings (Ribbon \"AI 翻译\" > 模型设置, or run AI_TRANSLATE_SETTINGS)," +
-                    $"\nor set OPENAI_API_KEY / create a settings file at:" +
-                    $"\n  {Settings.SettingsFilePath ?? "<assembly directory>\\AutoCAD.AITranslate.settings.json"}");
+                    $"\nor set {LlmSettingKeys.ApiKey} / create a settings file at:" +
+                    $"\n  {AppSettings.SettingsFilePath ?? "<assembly directory>\\AutoCAD.AITranslate.settings.json"}");
                 return;
             }
 
@@ -278,7 +279,7 @@ namespace AutoCAD.AITranslate
             // No transaction is held from here on. The dialog can stay open for minutes
             // while the user edits translations, and holding the document lock across that
             // would freeze the drawing for the whole session.
-            var language = TargetLanguages.ByCode(Settings.Read("OPENAI_TARGET_LANGUAGE"));
+            var language = TargetLanguages.ByCode(AppSettings.Store.Read(LlmSettingKeys.TargetLanguage));
             service.SetTargetLanguage(language);
 
             var options = new NetworkSettings();
@@ -353,9 +354,9 @@ namespace AutoCAD.AITranslate
             }
 
             // Remember the language for next time, so the picker opens on the same choice.
-            Settings.Write(new[]
+            AppSettings.Store.Write(new[]
             {
-                new KeyValuePair<string, string>("OPENAI_TARGET_LANGUAGE", outcome.Language.Code)
+                new KeyValuePair<string, string>(LlmSettingKeys.TargetLanguage, outcome.Language.Code)
             });
 
             // Persist the user's decisions before touching the drawing: a correction is

@@ -1,10 +1,35 @@
 $ErrorActionPreference = 'Continue'
 [Console]::OutputEncoding = [System.Text.Encoding]::UTF8
 
-$dll = 'C:\Users\dang.jf\WorkBuddy AI\2026-09-26-16-56-26\AUTOCAD2025_AI_TRANSLATE_CH_EN\src\AutoCAD.AITranslate\bin\Release\net8.0-windows\AutoCAD.AITranslate.dll'
+$dll = 'C:\Users\dang.jf\WorkBuddy AI\2026-09-26-16-56-26\AUTOCAD2025_AI_TRANSLATE_CH_EN\src\JeffCAD.AiAssistant\bin\Release\net8.0-windows\JeffCAD.AiAssistant.dll'
 $acadExe = 'C:\Program Files\Autodesk\AutoCAD 2026\acad.exe'
 $dwg = 'C:\Users\dang.jf\Documents\Drawing1.dwg'
-$log = Join-Path $env:TEMP 'AutoCAD.AITranslate.diag.log'
+$log = Join-Path $env:TEMP 'JeffCAD.AiAssistant.diag.log'
+# LlmToolkit.dll must sit beside the plugin DLL: the plugin references it, and
+# NETLOAD resolves that reference from the same directory unless it is already
+# loaded. Copying it here is what makes a manual NETLOAD of the plugin work.
+$deps = @(
+    'C:\Users\dang.jf\WorkBuddy AI\2026-09-26-16-56-26\AUTOCAD2025_AI_TRANSLATE_CH_EN\src\LlmToolkit\bin\Release\net8.0\LlmToolkit.dll'
+)
+
+# NETLOAD resolves the plugin's own dependencies from the plugin's directory, so
+# LlmToolkit.dll has to be sitting next to it. Stage both, and fail loudly rather
+# than letting NETLOAD report a bare FileNotFoundException.
+if (-not (Test-Path -LiteralPath $dll)) {
+    Write-Host "Plugin DLL not built: $dll" -ForegroundColor Red
+    Write-Host "Run .\build.ps1 first." -ForegroundColor Red
+    exit 1
+}
+$pluginDir = Split-Path -Parent $dll
+foreach ($dep in $deps) {
+    if (-not (Test-Path -LiteralPath $dep)) {
+        Write-Host "Dependency not built: $dep" -ForegroundColor Red
+        exit 1
+    }
+    $target = Join-Path $pluginDir (Split-Path -Leaf $dep)
+    Copy-Item -LiteralPath $dep -Destination $target -Force
+    Write-Host "staged dependency: $target"
+}
 
 Add-Type -AssemblyName System.Windows.Forms
 Add-Type -AssemblyName UIAutomationClient

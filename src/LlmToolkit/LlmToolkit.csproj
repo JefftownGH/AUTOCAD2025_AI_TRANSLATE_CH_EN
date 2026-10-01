@@ -1,0 +1,41 @@
+<Project Sdk="Microsoft.NET.Sdk">
+  <PropertyGroup>
+    <TargetFramework>net8.0</TargetFramework>
+    <RootNamespace>LlmToolkit</RootNamespace>
+    <AssemblyName>LlmToolkit</AssemblyName>
+    <LangVersion>latest</LangVersion>
+    <Nullable>disable</Nullable>
+
+    <!--
+      A reusable LLM transport + configuration component.
+
+      Deliberately net8.0 rather than net8.0-windows: it must be referenceable from
+      console tools, web services, WPF apps, and the AutoCAD plugin alike. Anything
+      that needs a window, a drawing database, or a vendor SDK belongs in the
+      consuming project, not here.
+    -->
+    <Version>1.0.0</Version>
+    <AssemblyVersion>1.0.0.0</AssemblyVersion>
+    <FileVersion>1.0.0.0</FileVersion>
+    <Product>LlmToolkit</Product>
+    <Description>Vendor-neutral client for OpenAI-compatible chat APIs, with model presets, endpoint auto-detection and a file-backed settings store.</Description>
+    <PackageId>LlmToolkit</PackageId>
+    <GenerateDocumentationFile>true</GenerateDocumentationFile>
+    <NoWarn>$(NoWarn);CS1591</NoWarn>
+  </PropertyGroup>
+
+  <!--
+    NuGet packaging metadata.
+
+    The package is a by-product of the build, not the primary deliverable: other
+    projects in this repo reference the project directly, and the .nupkg exists so
+    the same component can be consumed from a different repo without source copying.
+    `dotnet pack` picks these up automatically.
+  -->
+  <PropertyGroup>
+    <Authors>JeffCAD</Authors>
+    <PackageTags>llm;openai-compatible;chatgpt;deepseek;zhipu;qwen</PackageTags>
+    <RepositoryType>git</RepositoryType>
+    <PackageLicenseExpression>MIT</PackageLicenseExpression>
+  </PropertyGroup>
+</Project>

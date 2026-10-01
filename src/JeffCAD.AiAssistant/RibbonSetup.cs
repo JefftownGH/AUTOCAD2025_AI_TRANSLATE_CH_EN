@@ -7,7 +7,7 @@ using Autodesk.AutoCAD.EditorInput;
 using Autodesk.Windows;
 using AcApp = Autodesk.AutoCAD.ApplicationServices.Application;
 
-namespace AutoCAD.AITranslate
+namespace JeffCAD.AiAssistant
 {
     /// <summary>
     /// Creates the plugin's Ribbon tab ("AI 翻译").
@@ -37,7 +37,7 @@ namespace AutoCAD.AITranslate
     /// </remarks>
     internal static class RibbonSetup
     {
-        private const string TabId = "AITRANSLATE_TAB";
+        private const string TabId = "JEFFCAD_AIASSISTANT_TAB";
 
         /// <summary>Work queued by a click, to be run on the next Idle tick.</summary>
         private static readonly Queue<Action> PendingWork = new Queue<Action>();
@@ -59,7 +59,7 @@ namespace AutoCAD.AITranslate
             {
                 // The Ribbon control may not exist yet depending on load order, e.g. when
                 // the DLL is NETLOADed while the UI is still being constructed.
-                Diagnostics.Log("ribbon not ready at Initialize; deferring to Idle");
+                AppSettings.Diagnostics.Log("ribbon not ready at Initialize; deferring to Idle");
                 AcApp.Idle += OnIdleForRibbon;
             }
         }
@@ -74,7 +74,7 @@ namespace AutoCAD.AITranslate
             }
             else
             {
-                Diagnostics.Log("ribbon still null at Idle; tab not created");
+                AppSettings.Diagnostics.Log("ribbon still null at Idle; tab not created");
             }
         }
 
@@ -98,7 +98,7 @@ namespace AutoCAD.AITranslate
             if (stale != null)
             {
                 ribbon.Tabs.Remove(stale);
-                Diagnostics.Log("removed stale ribbon tab from previous load");
+                AppSettings.Diagnostics.Log("removed stale ribbon tab from previous load");
             }
 
             var version = Assembly.GetExecutingAssembly().GetName().Version;
@@ -107,31 +107,31 @@ namespace AutoCAD.AITranslate
 
             var translatePanel = new RibbonPanelSource { Title = "翻译" };
             translatePanel.Items.Add(CreateButton(
-                "翻译全图", "AITRANSLATE_ALL", "翻译整个图纸（模型空间 + 图纸空间）中的中文文本，可选目标语言并逐条校对",
+                "翻译全图", "JEFFCAD_AIASSISTANT_ALL", "翻译整个图纸（模型空间 + 图纸空间）中的中文文本，可选目标语言并逐条校对",
                 TranslationCommands.TranslateAll));
             translatePanel.Items.Add(CreateButton(
-                "翻译选区", "AITRANSLATE_SEL", "只翻译选中的文本对象，可选目标语言并逐条校对",
+                "翻译选区", "JEFFCAD_AIASSISTANT_SEL", "只翻译选中的文本对象，可选目标语言并逐条校对",
                 TranslationCommands.TranslateSelection));
             translatePanel.Items.Add(CreateButton(
-                "回滚翻译", "AITRANSLATE_ROLLBACK", "撤销当前图纸最近一次翻译",
+                "回滚翻译", "JEFFCAD_AIASSISTANT_ROLLBACK", "撤销当前图纸最近一次翻译",
                 TranslationCommands.Rollback));
             tab.Panels.Add(new RibbonPanel { Source = translatePanel });
 
             var configPanel = new RibbonPanelSource { Title = "配置" };
             configPanel.Items.Add(CreateButton(
-                "模型设置", "AITRANSLATE_SETTINGS", "配置大模型 API Key、接口地址、模型等参数",
+                "模型设置", "JEFFCAD_AIASSISTANT_SETTINGS", "配置大模型 API Key、接口地址、模型等参数",
                 TranslationCommands.OpenSettings));
             configPanel.Items.Add(CreateButton(
-                "保存译文库", "AITRANSLATE_SAVE_CACHE", "把翻译记忆立即写入磁盘（默认在每次翻译后自动保存）",
+                "保存译文库", "JEFFCAD_AIASSISTANT_SAVE_CACHE", "把翻译记忆立即写入磁盘（默认在每次翻译后自动保存）",
                 TranslationCommands.SaveCache));
             configPanel.Items.Add(CreateButton(
-                "清空缓存", "AITRANSLATE_CLEAR_CACHE", "清空内存缓存与译文记忆库",
+                "清空缓存", "JEFFCAD_AIASSISTANT_CLEAR_CACHE", "清空内存缓存与译文记忆库",
                 TranslationCommands.ClearCache));
             tab.Panels.Add(new RibbonPanel { Source = configPanel });
 
             ribbon.Tabs.Add(tab);
 
-            Diagnostics.Log($"ribbon tab built OK, v{version}, buttons=6 (direct in-process calls)");
+            AppSettings.Diagnostics.Log($"ribbon tab built OK, v{version}, buttons=6 (direct in-process calls)");
             GetEditor()?.WriteMessage(
                 $"\n[AI 翻译] Ribbon 选项卡已创建 (v{version})。按钮为直接调用，无需命令上下文。");
         }
@@ -210,7 +210,7 @@ namespace AutoCAD.AITranslate
             }
             catch (Exception ex)
             {
-                Diagnostics.Log($"queued command FAILED: {ex}");
+                AppSettings.Diagnostics.Log($"queued command FAILED: {ex}");
                 GetEditor()?.WriteMessage($"\n[AI 翻译] 执行失败: {ex.Message}");
             }
         }
@@ -242,7 +242,7 @@ namespace AutoCAD.AITranslate
 
             public void Execute(object parameter)
             {
-                Diagnostics.Log($"button '{_buttonText}' clicked; queueing direct call");
+                AppSettings.Diagnostics.Log($"button '{_buttonText}' clicked; queueing direct call");
 
                 // Hand the work to AutoCAD's thread before touching the database.
                 QueueForAutoCad(_action);

@@ -152,7 +152,7 @@ if ($blocking.Count -gt 0) {
 # ---------------------------------------------------------------------------
 # Build
 # ---------------------------------------------------------------------------
-$project = Join-Path $PSScriptRoot "src\AutoCAD.AITranslate\AutoCAD.AITranslate.csproj"
+$project = Join-Path $PSScriptRoot "src\JeffCAD.AiAssistant\JeffCAD.AiAssistant.csproj"
 $restoreIgnore = "-p:RestoreIgnoreFailedSources=true"
 
 if ($useDotNet) {
@@ -203,12 +203,12 @@ if ($LASTEXITCODE -ne 0) {
     exit $LASTEXITCODE
 }
 
-$output = Join-Path $PSScriptRoot "src\AutoCAD.AITranslate\bin\$Configuration\net8.0-windows\AutoCAD.AITranslate.dll"
+$output = Join-Path $PSScriptRoot "src\JeffCAD.AiAssistant\bin\$Configuration\net8.0-windows\JeffCAD.AiAssistant.dll"
 Write-Host ""
 Write-Host "Build succeeded." -ForegroundColor Green
 Write-Host "Output: $output"
 Write-Host ""
 Write-Host "Next steps:"
-Write-Host "  1. Copy AutoCAD.AITranslate.settings.json.example to AutoCAD.AITranslate.settings.json"
-Write-Host "     next to the DLL and fill in OPENAI_API_KEY."
+Write-Host "  1. Copy JeffCAD.AiAssistant.settings.json.example to JeffCAD.AiAssistant.settings.json"
+Write-Host "     next to the DLL and fill in LLM_API_KEY."
 Write-Host "  2. In AutoCAD run NETLOAD and pick the DLL above."

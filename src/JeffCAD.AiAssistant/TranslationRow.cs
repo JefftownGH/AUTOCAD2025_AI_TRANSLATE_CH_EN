@@ -3,7 +3,7 @@ using System.ComponentModel;
 using System.Runtime.CompilerServices;
 using Autodesk.AutoCAD.DatabaseServices;
 
-namespace AutoCAD.AITranslate
+namespace JeffCAD.AiAssistant
 {
     /// <summary>
     /// One line of the bilingual review list: the text found in the drawing, the proposed

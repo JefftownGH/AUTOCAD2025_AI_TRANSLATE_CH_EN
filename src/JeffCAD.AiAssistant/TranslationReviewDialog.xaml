@@ -1,4 +1,4 @@
-<Window x:Class="AutoCAD.AITranslate.TranslationReviewDialog"
+<Window x:Class="JeffCAD.AiAssistant.TranslationReviewDialog"
     xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
     xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
     Title="翻译预览 — AutoCAD AI 翻译"

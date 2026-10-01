@@ -1,6 +1,6 @@
 using Autodesk.AutoCAD.DatabaseServices;
 
-namespace AutoCAD.AITranslate
+namespace JeffCAD.AiAssistant
 {
     internal static class LayerUtils
     {

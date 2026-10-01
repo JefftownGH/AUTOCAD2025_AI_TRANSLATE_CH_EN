@@ -1,0 +1,11 @@
+{
+  "LLM_API_KEY": "",
+  "LLM_MODEL": "glm-4.6",
+  "LLM_BASE_URL": "https://open.bigmodel.cn/api/paas/v4",
+  "LLM_API_TYPE": "chat_completions",
+  "LLM_SYSTEM_PROMPT": "",
+  "LLM_TARGET_LANGUAGE": "en",
+  "LLM_TIMEOUT_MS": 120000,
+  "LLM_ORG": "",
+  "LLM_PROJECT": ""
+}

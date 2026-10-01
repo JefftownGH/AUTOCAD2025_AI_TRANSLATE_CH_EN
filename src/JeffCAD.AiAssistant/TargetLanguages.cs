@@ -2,7 +2,7 @@ using System;
 using System.Collections.Generic;
 using System.Linq;
 
-namespace AutoCAD.AITranslate
+namespace JeffCAD.AiAssistant
 {
     /// <summary>A selectable translation target.</summary>
     public sealed class TargetLanguage
@@ -76,7 +76,7 @@ namespace AutoCAD.AITranslate
         /// user's own system prompt happens to mention.
         /// </summary>
         /// <remarks>
-        /// The user's <c>OPENAI_SYSTEM_PROMPT</c> is kept (it carries house style such as
+        /// The user's own system prompt is kept (it carries house style such as
         /// "直接给出翻译结果，不要解释") but an explicit language instruction is appended,
         /// because a stored prompt written for English would otherwise fight the picker.
         /// </remarks>

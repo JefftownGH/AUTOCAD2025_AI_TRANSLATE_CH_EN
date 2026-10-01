@@ -4,7 +4,7 @@ using System.IO;
 using System.Text;
 using Autodesk.AutoCAD.EditorInput;
 
-namespace AutoCAD.AITranslate
+namespace JeffCAD.AiAssistant
 {
     internal static class CsvExporter
     {
